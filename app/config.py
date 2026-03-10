@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     # OpenAI Configuration
     OPENAI_API_KEY: Annotated[str, Field(description="OpenAI API key")]
-    OPENAI_MODEL: Annotated[str, Field(description="OpenAI model name")] = "gpt-3.5-turbo"
+    OPENAI_MODEL: Annotated[str, Field(description="OpenAI model name")] = "gpt-4o-mini"
 
     # Application Settings
     APP_NAME: Annotated[str, Field()] = "AI Data Analysis Platform"
@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     LLM_MAX_TOKENS: Annotated[int, Field(gt=0)] = 2000
     AGENT_MAX_ITERATIONS: Annotated[int, Field(gt=0)] = 10
     AGENT_VERBOSE: Annotated[bool, Field()] = True
+
+    # Sandbox Configuration
+    SANDBOX_TIMEOUT: Annotated[int, Field(gt=0, description="Max seconds for sandbox code execution")] = 30
+    SANDBOX_MAX_OUTPUT: Annotated[int, Field(gt=0, description="Max chars of sandbox output returned to agent")] = 3000
 
     model_config = SettingsConfigDict(
         env_file=".env",
