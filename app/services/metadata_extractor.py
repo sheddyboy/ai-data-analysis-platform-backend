@@ -120,7 +120,7 @@ class MetadataExtractor:
         sample = df.head(n)
         
         # Convert to records and handle NaN values
-        records = sample.to_dict('records')
+        records: List[Dict[str, Any]] = [{str(k): v for k, v in row.items()} for row in sample.to_dict('records')]
         
         # Replace NaN with None for JSON serialization
         for record in records:
