@@ -88,7 +88,7 @@ class DataAnalystAgent:
 
         # Create agent executor
         self.agent_executor = AgentExecutor(
-            agent=self.agent,
+            agent=self.agent,  # type: ignore[arg-type]
             tools=self.tools,
             verbose=settings.AGENT_VERBOSE,
             max_iterations=settings.AGENT_MAX_ITERATIONS,
