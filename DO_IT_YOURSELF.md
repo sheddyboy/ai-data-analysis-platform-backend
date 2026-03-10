@@ -93,8 +93,9 @@ Thought: What do I need to do?
 Action: load_dataset
 Observation: Dataset has columns: date, product, revenue
 Thought: Now I should analyze revenue by product
-Action: analyze_data
-Observation: Top product is Widget A: $500,000
+Action: execute_python
+Action Input: print(df.groupby('product')['revenue'].sum().nlargest(5))
+Observation: Widget A: $500,000 ...
 Thought: I can create a visualization
 Action: create_visualization
 ...
@@ -243,7 +244,7 @@ class DatasetService:
    ↓
 3. RelevanceGuard.validate_query()
    ├─ Build dataset context
-   ├─ Ask GPT-3.5: "Is this question relevant?"
+   ├─ Ask GPT-4o-mini: "Is this question relevant?"
    ├─ If NO → Raise IrrelevantQuestionError
    └─ If YES → Continue
    ↓
@@ -292,27 +293,26 @@ Step N: Provide final answer
 Tools are functions the agent can call:
 
 ```python
-def analyze_data_func(input_str: str) -> str:
+def execute_python_func(code: str) -> str:
     """
-    Performs data analysis.
-    Input must be JSON with operation parameters.
+    Executes Python code against the loaded dataset.
+    Input is raw Python code (not JSON).
     """
-    params = json.loads(input_str)
-    # Execute operation
-    return result
+    # Run code in restricted sandbox
+    return captured_stdout
 
 # Wrap in LangChain Tool
-analyze_data_tool = Tool(
-    name="analyze_data",
-    description="Analyzes data with grouping/aggregation...",
-    func=analyze_data_func
+execute_python_tool = Tool(
+    name="execute_python",
+    description="Execute Python code to analyze the dataset...",
+    func=execute_python_func
 )
 ```
 
 **Key points**:
 - Tool names should be descriptive
 - Description guides the agent when to use it
-- Input/output must be strings (JSON for complex data)
+- `execute_python` accepts raw code; other tools accept JSON strings
 - Tools should be focused (do one thing well)
 
 ### Agent Execution Example
@@ -321,15 +321,17 @@ Given question: "What's the average revenue by region?"
 
 ```
 Agent thinks: "I need to load the dataset first"
-→ Action: load_dataset()
+→ Action: load_dataset
 → Observation: "Dataset has columns: region, revenue..."
 
 Agent thinks: "I should group by region and calculate mean"
-→ Action: analyze_data({"operation": "group_by", ...})
+→ Action: execute_python
+→ Action Input: print(df.groupby('region')['revenue'].mean())
 → Observation: "North: $2.5M, South: $2.1M, ..."
 
 Agent thinks: "Let me create a chart"
-→ Action: create_visualization({"chart_type": "bar", ...})
+→ Action: create_visualization
+→ Action Input: {"chart_type": "bar", ...}
 → Observation: "Created bar chart"
 
 Agent thinks: "I have enough information"
@@ -363,9 +365,10 @@ class DataAnalystAgent:
     def __init__(self):
         self.tools = [
             load_dataset_tool,
-            analyze_data_tool,
+            execute_python_tool,
+            create_visualization_tool,
+            generate_insights_tool,
             my_custom_tool,  # ← Add here
-            ...
         ]
 ```
 
@@ -494,11 +497,11 @@ async def schedule_query(
 
 In `.env`:
 ```bash
-# Use GPT-4 for better quality
-OPENAI_MODEL=gpt-4-turbo-preview
+# Default model (fast and cost-effective)
+OPENAI_MODEL=gpt-4o-mini
 
-# Or use cheaper/faster model
-OPENAI_MODEL=gpt-3.5-turbo
+# Use a more powerful model for complex datasets
+OPENAI_MODEL=gpt-4o
 ```
 
 ### Adjust Agent Behavior

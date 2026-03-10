@@ -11,9 +11,10 @@ A production-grade backend system that enables users to interact with their data
 - **Natural Language Queries**: Ask questions in plain English
 - **AI-Powered Analysis**: LangChain agents orchestrate intelligent data exploration
 - **LLM Relevance Guard**: Validates query relevance before processing
+- **Sandboxed Code Execution**: Agent runs Python/pandas code in a restricted environment with timeout and output limits
 - **Automatic Visualizations**: Context-aware chart generation with Plotly
 - **Insight Generation**: Natural language summaries and recommendations
-- **Redis Caching**: Lightning-fast repeat query responses
+- **Redis Caching**: Lightning-fast repeat query responses (gracefully disabled on connection failure)
 - **Multi-Format Support**: CSV and Excel file handling
 - **RESTful API**: Clean, documented endpoints
 - **Async Architecture**: Non-blocking FastAPI with SQLAlchemy 2.0
@@ -33,7 +34,7 @@ A production-grade backend system that enables users to interact with their data
 ┌─────────────────────────────────────────────────────────┐
 │            LLM Orchestration Layer                       │
 │  ┌─────────────────────────────────────────────────┐   │
-│  │  Relevance Guard (OpenAI GPT-3.5-Turbo)         │   │
+│  │  Relevance Guard (OpenAI GPT-4o-mini)            │   │
 │  └─────────────────────────────────────────────────┘   │
 │                          ↓                               │
 │  ┌─────────────────────────────────────────────────┐   │
@@ -47,8 +48,8 @@ A production-grade backend system that enables users to interact with their data
 ┌─────────────────────────────────────────────────────────┐
 │                   Tool Execution Layer                   │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ │
-│  │  Load    │ │ Analyze  │ │Visualize │ │ Insights │ │
-│  │ Dataset  │ │   Data   │ │   Data   │ │Generator │ │
+│  │  Load    │ │ Execute  │ │Visualize │ │ Insights │ │
+│  │ Dataset  │ │  Python  │ │   Data   │ │Generator │ │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ │
 └─────────────────────────────────────────────────────────┘
                           ↓
@@ -182,7 +183,7 @@ Visit `http://localhost:8000/docs` for Swagger UI with all endpoints.
 | **Database** | PostgreSQL 15 | Relational data storage |
 | **ORM** | SQLAlchemy 2.0 | Async database operations |
 | **Cache** | Redis 7 | Query result caching |
-| **LLM** | OpenAI GPT-3.5-Turbo | Natural language processing |
+| **LLM** | OpenAI GPT-4o-mini | Natural language processing |
 | **Agent Framework** | LangChain Classic | ReAct pattern orchestration |
 | **Data Processing** | Pandas 2.1 | DataFrame operations |
 | **Visualization** | Plotly 5.18 | Interactive charts |
@@ -218,6 +219,7 @@ ai-data-analysis-platform/
 │   │   └── data_analyst_agent.py
 │   ├── tools/                  # Agent tools
 │   │   ├── dataset_tools.py
+│   │   ├── sandbox_tool.py
 │   │   ├── analysis_tools.py
 │   │   ├── visualization_tools.py
 │   │   └── insight_tools.py
@@ -245,12 +247,14 @@ ai-data-analysis-platform/
 | `DATABASE_URL` | PostgreSQL connection string | Required |
 | `REDIS_URL` | Redis connection string | Required |
 | `OPENAI_API_KEY` | OpenAI API key | Required |
-| `OPENAI_MODEL` | OpenAI model to use | gpt-3.5-turbo |
+| `OPENAI_MODEL` | OpenAI model to use | gpt-4o-mini |
 | `UPLOAD_DIR` | Directory for uploads | ./uploads |
 | `MAX_UPLOAD_SIZE` | Max file size in bytes | 104857600 (100MB) |
 | `CACHE_TTL` | Cache expiration (seconds) | 3600 |
 | `ENABLE_CACHE` | Enable Redis caching | True |
 | `AGENT_MAX_ITERATIONS` | Max agent iterations | 10 |
+| `SANDBOX_TIMEOUT` | Max seconds for sandbox code execution | 30 |
+| `SANDBOX_MAX_OUTPUT` | Max chars of sandbox output returned to agent | 3000 |
 
 ## 📊 Example Use Cases
 

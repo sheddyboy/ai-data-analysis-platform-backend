@@ -34,7 +34,7 @@ Requires PostgreSQL 15+, Redis 7+, and an `OPENAI_API_KEY` in `.env` (copy from 
 2. **Query**: `POST /api/v1/queries/datasets/{id}/query` → `QueryService` orchestrates:
    - Check Redis cache (`CacheService`)
    - `RelevanceGuard` — uses OpenAI directly (not LangChain) to validate query relevance to the dataset columns
-   - `DataAnalystAgent` — LangChain ReAct agent with 6 tools, executes analysis
+   - `DataAnalystAgent` — LangChain ReAct agent with 4 tools, executes analysis
    - Result persisted to `Query` table and cached in Redis
 
 ### Key Layers
@@ -42,7 +42,7 @@ Requires PostgreSQL 15+, Redis 7+, and an `OPENAI_API_KEY` in `.env` (copy from 
 - **API** (`app/api/v1/endpoints/`): FastAPI routers for `datasets` and `queries`, all under `/api/v1` prefix
 - **Services** (`app/services/`): Business logic — `DatasetService`, `QueryService`, `MetadataExtractor`, `CacheService` (singleton `cache_service`)
 - **Agents** (`app/agents/`): `RelevanceGuard` (OpenAI direct) and `DataAnalystAgent` (LangChain ReAct)
-- **Tools** (`app/tools/`): LangChain tools used by the agent — `load_dataset`, `analyze_data`, `get_statistics`, `filter_data`, `create_visualization`, `generate_insights`. Tools use module-level context objects (`dataset_context`, `viz_storage`, `insight_storage`) for state sharing
+- **Tools** (`app/tools/`): LangChain tools used by the agent — `load_dataset`, `execute_python`, `create_visualization`, `generate_insights`. Tools use module-level context objects (`dataset_context`, `viz_storage`, `insight_storage`) for state sharing. `execute_python` runs sandboxed pandas/numpy code against the dataset with configurable timeout and output limits
 - **Models** (`app/models/dataset.py`): SQLAlchemy models — `Dataset` and `Query` with UUID primary keys, JSON columns for metadata
 - **Config** (`app/config.py`): Pydantic `BaseSettings` loading from `.env`, accessed via global `settings` singleton
 
