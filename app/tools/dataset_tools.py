@@ -2,14 +2,14 @@
 
 import pandas as pd
 from langchain.tools import Tool
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
 class DatasetContext:
     """Context object to hold the current dataset during agent execution."""
     
     def __init__(self):
-        self.df: pd.DataFrame = None
+        self.df: Optional[pd.DataFrame] = None
         self.metadata: Dict[str, Any] = {}
     
     def load_dataset(self, df: pd.DataFrame, metadata: Dict[str, Any]):
