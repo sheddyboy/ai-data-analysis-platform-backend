@@ -39,9 +39,10 @@ class AgentExecutionError(Exception):
 
 
 async def irrelevant_question_exception_handler(
-    request: Request, exc: IrrelevantQuestionError
+    request: Request, exc: Exception
 ) -> JSONResponse:
     """Handle irrelevant question errors."""
+    assert isinstance(exc, IrrelevantQuestionError)
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content={
@@ -53,9 +54,10 @@ async def irrelevant_question_exception_handler(
 
 
 async def dataset_not_found_exception_handler(
-    request: Request, exc: DatasetNotFoundError
+    request: Request, exc: Exception
 ) -> JSONResponse:
     """Handle dataset not found errors."""
+    assert isinstance(exc, DatasetNotFoundError)
     return JSONResponse(
         status_code=status.HTTP_404_NOT_FOUND,
         content={
@@ -67,9 +69,10 @@ async def dataset_not_found_exception_handler(
 
 
 async def file_processing_exception_handler(
-    request: Request, exc: FileProcessingError
+    request: Request, exc: Exception
 ) -> JSONResponse:
     """Handle file processing errors."""
+    assert isinstance(exc, FileProcessingError)
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content={
@@ -80,9 +83,10 @@ async def file_processing_exception_handler(
 
 
 async def agent_execution_exception_handler(
-    request: Request, exc: AgentExecutionError
+    request: Request, exc: Exception
 ) -> JSONResponse:
     """Handle agent execution errors."""
+    assert isinstance(exc, AgentExecutionError)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
