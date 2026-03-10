@@ -22,7 +22,7 @@ class VisualizationResponse(BaseModel):
     
     type: str = Field(..., description="Chart type (bar, line, scatter, pie, etc.)")
     title: str = Field(..., description="Visualization title")
-    data: Dict[str, Any] = Field(..., description="Plotly chart data")
+    data: List[Dict[str, Any]] = Field(..., description="Plotly chart data")
     layout: Optional[Dict[str, Any]] = Field(None, description="Plotly layout configuration")
 
 

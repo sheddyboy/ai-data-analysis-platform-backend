@@ -54,16 +54,17 @@ User Question: "{question}"
 Analyze whether this question can be meaningfully answered using the dataset columns and data above.
 
 A question is RELEVANT if:
-- It asks about data that exists in the columns
-- It requests analysis, statistics, or insights about the data
-- It asks for comparisons, trends, or patterns in the data
+- It references any column name or a value type that exists in the columns
+- It asks to filter, rank, sort, or aggregate records by any column (e.g. "top 10 by popularity", "most streamed", "songs in the US")
+- It requests analysis, statistics, trends, comparisons, or patterns about the data
 - It requests visualizations of the data
+- It uses synonyms or natural language for column concepts (e.g. "popular" → popularity column, "country" → country column)
 
 A question is IRRELEVANT if:
-- It asks about topics completely unrelated to the dataset
-- It asks general knowledge questions
-- It requests information not present in the columns
-- It's a greeting, casual conversation, or off-topic
+- It is completely unrelated to any column or value in the dataset (e.g. asking about the weather or a recipe)
+- It is a greeting, casual conversation, or off-topic request with no connection to the data
+
+When in doubt, answer YES — it is better to attempt answering a borderline question than to wrongly reject a valid one.
 
 Respond with ONLY one word: "YES" if relevant, "NO" if irrelevant."""
 
