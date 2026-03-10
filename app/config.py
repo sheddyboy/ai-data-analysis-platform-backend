@@ -1,43 +1,44 @@
 """Application configuration using Pydantic Settings."""
 
+from typing import Annotated
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
-    
+
     # Database Configuration
-    DATABASE_URL: str
-    
+    DATABASE_URL: Annotated[str, Field(description="PostgreSQL connection URL")]
+
     # Redis Configuration
-    REDIS_URL: str
-    
+    REDIS_URL: Annotated[str, Field(description="Redis connection URL")]
+
     # OpenAI Configuration
-    OPENAI_API_KEY: str
-    OPENAI_MODEL: str = "gpt-3.5-turbo"
-    
+    OPENAI_API_KEY: Annotated[str, Field(description="OpenAI API key")]
+    OPENAI_MODEL: Annotated[str, Field(description="OpenAI model name")] = "gpt-3.5-turbo"
+
     # Application Settings
-    APP_NAME: str = "AI Data Analysis Platform"
-    APP_VERSION: str = "1.0.0"
-    DEBUG: bool = True
-    UPLOAD_DIR: str = "./uploads"
-    MAX_UPLOAD_SIZE: int = 104857600  # 100MB
-    
+    APP_NAME: Annotated[str, Field()] = "AI Data Analysis Platform"
+    APP_VERSION: Annotated[str, Field()] = "1.0.0"
+    DEBUG: Annotated[bool, Field()] = True
+    UPLOAD_DIR: Annotated[str, Field()] = "./uploads"
+    MAX_UPLOAD_SIZE: Annotated[int, Field(gt=0, description="Max upload size in bytes")] = 104857600
+
     # Server Configuration
-    HOST: str = "0.0.0.0"
-    PORT: int = 8000
-    
+    HOST: Annotated[str, Field()] = "0.0.0.0"
+    PORT: Annotated[int, Field(gt=0, lt=65536)] = 8000
+
     # Cache Configuration
-    CACHE_TTL: int = 3600  # 1 hour
-    ENABLE_CACHE: bool = True
-    
+    CACHE_TTL: Annotated[int, Field(gt=0, description="Cache TTL in seconds")] = 3600
+    ENABLE_CACHE: Annotated[bool, Field()] = True
+
     # LLM Configuration
-    LLM_TEMPERATURE: float = 0.0
-    LLM_MAX_TOKENS: int = 2000
-    AGENT_MAX_ITERATIONS: int = 10
-    AGENT_VERBOSE: bool = True
-    
+    LLM_TEMPERATURE: Annotated[float, Field(ge=0.0, le=2.0)] = 0.0
+    LLM_MAX_TOKENS: Annotated[int, Field(gt=0)] = 2000
+    AGENT_MAX_ITERATIONS: Annotated[int, Field(gt=0)] = 10
+    AGENT_VERBOSE: Annotated[bool, Field()] = True
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -46,4 +47,4 @@ class Settings(BaseSettings):
 
 
 # Global settings instance
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]
