@@ -9,9 +9,7 @@ from langchain.prompts import PromptTemplate
 from app.config import settings
 from app.tools import (
     load_dataset_tool,
-    analyze_data_tool,
-    get_statistics_tool,
-    filter_data_tool,
+    execute_python_tool,
     create_visualization_tool,
     generate_insights_tool,
 )
@@ -28,23 +26,32 @@ You have access to the following tools:
 
 {tools}
 
-Use the following format:
+You MUST use EXACTLY this format for every action — never skip a line:
 
 Question: the input question you must answer
 Thought: you should always think about what to do
 Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action (must be valid JSON for tools that require it)
+Action Input: the input to the action (always required — use {{}} if no input needed)
 Observation: the result of the action
 ... (this Thought/Action/Action Input/Observation can repeat N times)
 Thought: I now know the final answer
 Final Answer: the final answer to the original input question
 
-IMPORTANT:
-1. Always start by using the load_dataset tool to understand the data
-2. For analysis operations, use JSON format for Action Input
-3. Create visualizations when appropriate to help answer the question
-4. Generate insights at the end to provide context
-5. Be concise but thorough in your final answer
+CRITICAL RULES:
+- After every "Action:" line you MUST immediately write "Action Input:" on the next line. Never skip it.
+- For execute_python: Action Input is the raw Python code to run (not JSON). Example:
+    Action: execute_python
+    Action Input: print(df[df['country'] == 'UK'].groupby('artist_name').size().nlargest(10))
+- For all other tools: Action Input must be a valid JSON string, even if empty: {{}}
+- Never write "Action:" without immediately following it with "Action Input:"
+
+WORKFLOW:
+1. Always start with load_dataset to understand the schema and column names
+2. Use execute_python to analyze data — write precise pandas expressions and use print() to output results
+3. Call set_working_df(result_df) inside execute_python before using create_visualization if you need to visualize a subset
+4. If a visualization was requested, call create_visualization after setting the working df
+5. Generate insights at the end if helpful
+6. Be concise but thorough in your final answer
 
 Begin!
 
@@ -69,9 +76,7 @@ class DataAnalystAgent:
         # Define tools
         self.tools = [
             load_dataset_tool,
-            analyze_data_tool,
-            get_statistics_tool,
-            filter_data_tool,
+            execute_python_tool,
             create_visualization_tool,
             generate_insights_tool,
         ]
