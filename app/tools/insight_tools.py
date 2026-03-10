@@ -70,7 +70,7 @@ Focus on actionable insights and clear interpretations of the data."""
         )
         
         # Parse JSON response
-        content = response.choices[0].message.content.strip()
+        content = (response.choices[0].message.content or "").strip()
         
         # Try to extract JSON from the response
         if "```json" in content:
