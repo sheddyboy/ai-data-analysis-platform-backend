@@ -4,7 +4,7 @@ from sqlalchemy import String, Integer, DateTime, JSON, Text, ForeignKey, Float
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import uuid
 from app.database import Base
 
@@ -24,10 +24,10 @@ class Dataset(Base):
     # Metadata
     row_count: Mapped[int] = mapped_column(Integer)
     column_count: Mapped[int] = mapped_column(Integer)
-    columns: Mapped[dict] = mapped_column(JSON)  # List of column names
-    column_types: Mapped[dict] = mapped_column(JSON)  # Dict of column -> dtype
-    summary_statistics: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # Basic stats for numeric columns
-    sample_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # First 5 rows
+    columns: Mapped[List[str]] = mapped_column(JSON)  # List of column names
+    column_types: Mapped[Dict[str, str]] = mapped_column(JSON)  # Dict of column -> dtype
+    summary_statistics: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)  # Basic stats for numeric columns
+    sample_data: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(JSON, nullable=True)  # First 5 rows
 
     # Status
     status: Mapped[str] = mapped_column(String(50), default="ready")  # ready, processing, error
