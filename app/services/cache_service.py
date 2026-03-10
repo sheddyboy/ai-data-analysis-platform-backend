@@ -25,8 +25,11 @@ class CacheService:
                     encoding="utf-8",
                     decode_responses=True
                 )
+                # Verify connection is actually reachable
+                await self.redis.ping()
             except Exception as e:
-                print(f"Warning: Redis connection failed: {e}")
+                print(f"Warning: Redis connection failed: {e}. Cache disabled.")
+                self.redis = None
                 self.enabled = False
     
     async def disconnect(self):
@@ -72,6 +75,8 @@ class CacheService:
             return None
         except Exception as e:
             print(f"Cache get error: {e}")
+            self.redis = None
+            self.enabled = False
             return None
     
     async def set(self, dataset_id: str, question: str, result: dict) -> bool:
@@ -102,6 +107,8 @@ class CacheService:
             return True
         except Exception as e:
             print(f"Cache set error: {e}")
+            self.redis = None
+            self.enabled = False
             return False
     
     async def invalidate_dataset(self, dataset_id: str) -> bool:
