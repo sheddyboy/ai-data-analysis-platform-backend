@@ -51,7 +51,7 @@ class DatasetService:
                 original_filename=upload_file.filename,
                 file_path=file_path,
                 file_size=file_size,
-                file_type=get_file_extension(upload_file.filename).lstrip('.'),
+                file_type=get_file_extension(unique_filename).lstrip('.'),
                 row_count=metadata['rows'],
                 column_count=metadata['columns'],
                 columns=metadata['column_names'],
