@@ -35,27 +35,29 @@ def analyze_data_func(input_str: str) -> str:
             column = params["column"]
             agg_func = params.get("agg_func", "count")
             value_col = params.get("value_column")
-            
+
             if value_col:
                 result = df.groupby(column)[value_col].agg(agg_func).reset_index()
             else:
                 result = df.groupby(column).size().reset_index(name='count')
-            
+
+            dataset_context.set_working_dataframe(result)
             return f"Group by results:\n{result.to_string()}"
-        
+
         elif operation == "aggregate":
             column = params["column"]
             agg_func = params.get("agg_func", "sum")
-            
+
             result = df[column].agg(agg_func)
             return f"{agg_func.capitalize()} of {column}: {result}"
-        
+
         elif operation == "sort":
             column = params["column"]
             ascending = params.get("ascending", False)
             n = params.get("n", 10)
-            
+
             result = df.sort_values(column, ascending=ascending).head(n)
+            dataset_context.set_working_dataframe(result)
             return f"Top {n} rows sorted by {column}:\n{result.to_string()}"
         
         else:
@@ -136,6 +138,7 @@ def filter_data_func(input_str: str) -> str:
         else:
             return f"Unknown operator: {operator}"
         
+        dataset_context.set_working_dataframe(filtered_df)
         return f"Filtered results ({len(filtered_df)} rows):\n{filtered_df.head(10).to_string()}"
     
     except Exception as e:

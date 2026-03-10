@@ -51,7 +51,7 @@ def create_visualization_func(input_str: str) -> str:
         Confirmation message
     """
     try:
-        df = dataset_context.get_dataframe()
+        df = dataset_context.get_working_dataframe()
         params = json.loads(input_str)
         
         chart_type = params["chart_type"]

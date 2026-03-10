@@ -7,22 +7,36 @@ from typing import Dict, Any, Optional
 
 class DatasetContext:
     """Context object to hold the current dataset during agent execution."""
-    
+
     def __init__(self):
         self.df: Optional[pd.DataFrame] = None
+        self.working_df: Optional[pd.DataFrame] = None
         self.metadata: Dict[str, Any] = {}
-    
+
     def load_dataset(self, df: pd.DataFrame, metadata: Dict[str, Any]):
         """Load a dataset into the context."""
         self.df = df
+        self.working_df = None
         self.metadata = metadata
-    
+
     def get_dataframe(self) -> pd.DataFrame:
         """Get the current dataframe."""
         if self.df is None:
             raise ValueError("No dataset loaded")
         return self.df
-    
+
+    def set_working_dataframe(self, df: pd.DataFrame):
+        """Set a filtered/sorted working dataframe for subsequent operations."""
+        self.working_df = df
+
+    def get_working_dataframe(self) -> pd.DataFrame:
+        """Get the working dataframe if set, otherwise the full dataframe."""
+        if self.working_df is not None:
+            return self.working_df
+        if self.df is None:
+            raise ValueError("No dataset loaded")
+        return self.df
+
     def get_metadata(self) -> Dict[str, Any]:
         """Get dataset metadata."""
         return self.metadata
