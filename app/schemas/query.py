@@ -40,7 +40,7 @@ class QueryResponse(BaseModel):
     query_id: UUID = Field(..., description="Unique query identifier")
     dataset_id: UUID = Field(..., description="Dataset identifier")
     question: str = Field(..., description="Original question")
-    answer: str = Field(..., description="Natural language answer")
+    answer: Optional[str] = Field(None, description="Natural language answer")
     
     visualizations: List[VisualizationResponse] = Field(
         default_factory=list,
@@ -49,7 +49,7 @@ class QueryResponse(BaseModel):
     insights: Optional[InsightResponse] = Field(None, description="Generated insights")
     statistics: Optional[Dict[str, Any]] = Field(None, description="Statistical results")
     
-    execution_time: float = Field(..., description="Query execution time in seconds")
+    execution_time: Optional[float] = Field(None, description="Query execution time in seconds")
     cache_hit: bool = Field(..., description="Whether result was from cache")
     status: str = Field(..., description="Query status")
     created_at: datetime = Field(..., description="Query timestamp")
