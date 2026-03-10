@@ -80,11 +80,12 @@ def create_visualization_func(input_str: str) -> str:
             return f"Unknown chart type: {chart_type}"
         
         # Convert to JSON-serializable format
+        fig_json = json.loads(fig.to_json() or "{}")
         viz_data = {
             "type": chart_type,
             "title": title,
-            "data": json.loads(fig.to_json())["data"],
-            "layout": json.loads(fig.to_json())["layout"]
+            "data": fig_json["data"],
+            "layout": fig_json["layout"]
         }
         
         # Store visualization
