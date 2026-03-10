@@ -54,15 +54,17 @@ async def save_upload_file(upload_file: UploadFile) -> Tuple[str, str, int]:
         FileProcessingError: If file processing fails
     """
     # Validate file type
+    if not upload_file.filename:
+        raise FileProcessingError("No filename provided.")
     if not validate_file_type(upload_file.filename):
         raise FileProcessingError(
             f"Unsupported file type. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}"
         )
-    
+
     # Create upload directory if it doesn't exist
     upload_dir = Path(settings.UPLOAD_DIR)
     upload_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Generate unique filename
     extension = get_file_extension(upload_file.filename)
     unique_filename = f"{uuid.uuid4()}{extension}"
