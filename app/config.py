@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     APP_VERSION: Annotated[str, Field()] = "1.0.0"
     DEBUG: Annotated[bool, Field()] = True
     UPLOAD_DIR: Annotated[str, Field()] = "./uploads"
+    DATA_DIR: Annotated[str, Field()] = "./data"
     MAX_UPLOAD_SIZE: Annotated[int, Field(gt=0, description="Max upload size in bytes")] = 104857600
 
     # Server Configuration
@@ -36,7 +37,7 @@ class Settings(BaseSettings):
     # LLM Configuration
     LLM_TEMPERATURE: Annotated[float, Field(ge=0.0, le=2.0)] = 0.0
     LLM_MAX_TOKENS: Annotated[int, Field(gt=0)] = 2000
-    AGENT_MAX_ITERATIONS: Annotated[int, Field(gt=0)] = 10
+    AGENT_MAX_ITERATIONS: Annotated[int, Field(gt=0)] = 15
     AGENT_VERBOSE: Annotated[bool, Field()] = True
 
     # Sandbox Configuration

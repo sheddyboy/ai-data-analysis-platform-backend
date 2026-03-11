@@ -6,6 +6,7 @@ import json
 from langchain.tools import Tool
 from typing import Dict, Any
 from app.tools.dataset_tools import dataset_context
+from app.utils.json_parser import _parse_json_input
 
 
 class VisualizationStorage:
@@ -52,7 +53,10 @@ def create_visualization_func(input_str: str) -> str:
     """
     try:
         df = dataset_context.get_working_dataframe()
-        params = json.loads(input_str)
+        try:
+            params = _parse_json_input(input_str)
+        except ValueError as e:
+            return f"Error parsing visualization parameters: {e}"
         
         chart_type = params["chart_type"]
         x = params.get("x")

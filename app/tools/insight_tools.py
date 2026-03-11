@@ -4,6 +4,7 @@ import json
 from langchain.tools import Tool
 from openai import AsyncOpenAI
 from app.config import settings
+from app.utils.json_parser import _parse_json_input
 
 
 class InsightStorage:
@@ -107,7 +108,10 @@ def generate_insights_func(input_str: str) -> str:
         Confirmation message
     """
     try:
-        params = json.loads(input_str)
+        try:
+            params = _parse_json_input(input_str)
+        except ValueError as e:
+            return f"Error preparing insights: {e}"
         analysis_results = params.get("analysis_results", "")
         question = params.get("question", "")
         

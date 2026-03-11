@@ -12,12 +12,28 @@ class DatasetContext:
         self.df: Optional[pd.DataFrame] = None
         self.working_df: Optional[pd.DataFrame] = None
         self.metadata: Dict[str, Any] = {}
+        self.exec_namespace: Optional[Dict[str, Any]] = None
 
     def load_dataset(self, df: pd.DataFrame, metadata: Dict[str, Any]):
         """Load a dataset into the context."""
         self.df = df
         self.working_df = None
         self.metadata = metadata
+        self.exec_namespace = None  # reset namespace on new dataset load
+
+    def get_or_create_namespace(
+        self, pd_module: Any, np_module: Any, safe_builtins: dict
+    ) -> Dict[str, Any]:
+        """Return the persistent execution namespace, creating it if needed."""
+        if self.exec_namespace is None:
+            self.exec_namespace = {
+                "df": self.get_dataframe().copy(),
+                "pd": pd_module,
+                "np": np_module,
+                "set_working_df": self.set_working_dataframe,
+                "__builtins__": safe_builtins,
+            }
+        return self.exec_namespace
 
     def get_dataframe(self) -> pd.DataFrame:
         """Get the current dataframe."""

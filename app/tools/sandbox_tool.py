@@ -42,16 +42,19 @@ _SAFE_BUILTINS = {
 
 
 def _run_code(code: str) -> str:
-    """Execute code synchronously in a restricted namespace and capture stdout."""
-    df = dataset_context.get_dataframe().copy()
+    """Execute code synchronously in a persistent namespace and capture stdout.
 
-    namespace = {
-        "df": df,
-        "pd": pd,
-        "np": np,
-        "set_working_df": dataset_context.set_working_dataframe,
-        "__builtins__": _SAFE_BUILTINS,
-    }
+    Variables defined in previous calls within the same session are available.
+    The full dataset df is refreshed each call; all user-defined vars persist.
+    """
+    namespace = dataset_context.get_or_create_namespace(pd, np, _SAFE_BUILTINS)
+    # Refresh df so agent always sees the canonical dataset
+    namespace["df"] = dataset_context.get_dataframe().copy()
+    # Re-assert trusted bindings in case agent code accidentally overwrote them
+    namespace["pd"] = pd
+    namespace["np"] = np
+    namespace["set_working_df"] = dataset_context.set_working_dataframe
+    namespace["__builtins__"] = _SAFE_BUILTINS
 
     stdout_capture = io.StringIO()
     try:
@@ -104,18 +107,21 @@ execute_python_tool = Tool(
     description="""Execute Python code to analyze the dataset.
 
 Available variables:
-- `df`: the full dataset as a pandas DataFrame (read-only copy)
+- `df`: the full dataset as a pandas DataFrame (refreshed each call)
 - `pd`: pandas
 - `np`: numpy
 - `set_working_df(result_df)`: save a DataFrame for use by create_visualization
+
+Variables you define persist across ALL execute_python calls in this session.
+Example: define `top_artists` in call 1, use it directly in call 2.
 
 Use print() to output results — only printed output is returned.
 Output is capped at 3000 characters.
 
 Examples:
   print(df.groupby('artist')['streams'].sum().nlargest(10))
-  print(df[df['country'] == 'UK'].groupby('artist').size().nlargest(20))
+  print(df['country'].unique())  # always check exact values before filtering
   print(df.describe()[['streams', 'popularity']])
-  uk = df[df['country'] == 'UK']; set_working_df(uk); print(uk.head())""",
+  uk = df[df['country'] == 'United Kingdom']; set_working_df(uk); print(uk.head())""",
     func=execute_python_func,
 )
