@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
 from app.database import get_db
+from app.models.dataset import Query
 from app.services.query_service import QueryService
 from app.schemas.query import (
     QueryRequest,
@@ -22,7 +23,7 @@ from app.schemas.query import (
 router = APIRouter()
 
 
-def _build_query_response(query) -> QueryResponse:
+def _build_query_response(query: Query) -> QueryResponse:
     """Map a Query ORM object to a QueryResponse schema."""
     visualizations = []
     if query.visualizations:
@@ -132,7 +133,6 @@ async def query_dataset_stream(
     from app.agents.graph import build_graph
     from app.agents.state import AgentState
     from app.services.error_memory import ErrorMemoryService
-    from app.models.dataset import Query
     from app.config import settings
     import time
 
