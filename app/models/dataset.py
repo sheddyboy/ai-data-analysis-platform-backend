@@ -70,12 +70,26 @@ class Query(Base):
     # Cache
     cache_hit: Mapped[str] = mapped_column(String(10), default="false")  # "true" or "false"
 
+    # V2: structured output fields
+    key_findings: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
+    data_quality_notes: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
+    confidence: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    analysis_plan: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    follow_up_questions: Mapped[Optional[List[Dict[str, str]]]] = mapped_column(JSON, nullable=True)
+
+    # V2: conversation threading
+    session_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    parent_query_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("queries.id", ondelete="SET NULL"), nullable=True
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     dataset: Mapped["Dataset"] = relationship("Dataset", back_populates="queries")
+    parent_query: Mapped[Optional["Query"]] = relationship("Query", remote_side="Query.id", foreign_keys="Query.parent_query_id")
 
     def __repr__(self):
         return f"<Query(id={self.id}, question={self.question[:50]})>"
