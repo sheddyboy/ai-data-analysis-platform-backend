@@ -1,6 +1,7 @@
 """Tool factory for loading and describing the current dataset."""
 
 from langchain_core.tools import tool
+from loguru import logger
 from app.agents.context import AnalysisContext
 
 
@@ -14,6 +15,7 @@ def build_load_dataset_tool(context: AnalysisContext):
         Returns column names, types, row count, and the first 3 rows.
         """
         try:
+            logger.info("[tool:load_dataset] loading dataset")
             df = context.get_dataframe()
             metadata = context.metadata
 
@@ -32,6 +34,7 @@ def build_load_dataset_tool(context: AnalysisContext):
             if metadata.get("summary_statistics"):
                 description += "\nNumeric column statistics available (call execute_python for details).\n"
 
+            logger.info("[tool:load_dataset] done — %d rows, %d cols", len(df), len(df.columns))
             return description
 
         except Exception as e:

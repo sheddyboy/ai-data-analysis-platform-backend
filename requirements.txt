@@ -32,6 +32,7 @@ redis==5.0.1
 # Utilities
 python-dotenv==1.0.0
 aiofiles==23.2.1
+loguru==0.7.3
 
 # Development
 black==24.1.1

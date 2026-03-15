@@ -4,28 +4,33 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
+from loguru import logger
+
 from app.config import settings
+from app.core.logging import setup_logging
 from app.api.v1 import api_router
 from app.utils.error_handlers import setup_exception_handlers
 from app.services.cache_service import cache_service
+
+setup_logging()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
-    print(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
+    logger.info("Starting {} v{}", settings.APP_NAME, settings.APP_VERSION)
 
     # Connect to Redis
     await cache_service.connect()
-    print("✓ Connected to Redis")
+    logger.info("Connected to Redis")
 
     yield
 
     # Shutdown
-    print("Shutting down...")
+    logger.info("Shutting down...")
     await cache_service.disconnect()
-    print("✓ Disconnected from Redis")
+    logger.info("Disconnected from Redis")
 
 
 # Create FastAPI application

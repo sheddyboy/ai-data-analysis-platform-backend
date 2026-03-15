@@ -4,6 +4,7 @@ import json
 import hashlib
 from typing import Optional, Any
 from redis import asyncio as aioredis
+from loguru import logger
 from app.config import settings
 
 
@@ -28,7 +29,7 @@ class CacheService:
                 # Verify connection is actually reachable
                 await self.redis.ping()
             except Exception as e:
-                print(f"Warning: Redis connection failed: {e}. Cache disabled.")
+                logger.warning("Redis connection failed: {}. Cache disabled.", e)
                 self.redis = None
                 self.enabled = False
     
@@ -74,7 +75,7 @@ class CacheService:
             
             return None
         except Exception as e:
-            print(f"Cache get error: {e}")
+            logger.error("Cache get error: {}", e)
             self.redis = None
             self.enabled = False
             return None
@@ -106,7 +107,7 @@ class CacheService:
             
             return True
         except Exception as e:
-            print(f"Cache set error: {e}")
+            logger.error("Cache set error: {}", e)
             self.redis = None
             self.enabled = False
             return False
@@ -137,7 +138,7 @@ class CacheService:
             
             return True
         except Exception as e:
-            print(f"Cache invalidation error: {e}")
+            logger.error("Cache invalidation error: {}", e)
             return False
 
 

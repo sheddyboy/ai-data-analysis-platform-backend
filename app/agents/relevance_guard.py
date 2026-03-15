@@ -6,6 +6,8 @@ from pydantic import SecretStr
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from loguru import logger
+
 from app.config import settings
 from app.schemas.agent import RelevanceResult
 from app.utils.error_handlers import IrrelevantQuestionError
@@ -79,7 +81,7 @@ class RelevanceGuard:
             raise
         except Exception as e:
             # Permissive fallback: if LLM fails, allow the query
-            print(f"Relevance guard error (allowing query): {e}")
+            logger.warning("Relevance guard error (allowing query): {}", e)
             return True
 
     def _build_dataset_context(
