@@ -133,13 +133,25 @@ class QueryService:
         }
 
         try:
-            final_state = cast(AgentState, await graph.ainvoke(initial_state))
+            # recursion_limit = node steps, not iterations.
+            # Each executor iteration = 2 steps (tool_executor + tools).
+            # Add headroom for planner, synthesizer, follow_up.
+            recursion_limit = settings.AGENT_MAX_ITERATIONS_COMPLEX * 2 + 10
+            final_state = cast(
+                AgentState,
+                await graph.ainvoke(
+                    initial_state, config={"recursion_limit": recursion_limit}
+                ),
+            )
+
+            # final_state = cast(AgentState, await graph.ainvoke(initial_state))
         except Exception as e:
             raise AgentExecutionError(f"Agent execution failed: {str(e)}")
 
         # Auto-record error patterns from tool steps
         tool_steps = [
-            s for s in final_state.get("agent_steps", [])
+            s
+            for s in final_state.get("agent_steps", [])
             if s.get("node") == "tool_executor"
         ]
         self.error_memory.scan_steps_and_record(tool_steps)
@@ -194,6 +206,7 @@ class QueryService:
         query = result.scalar_one_or_none()
         if not query:
             from app.utils.error_handlers import DatasetNotFoundError
+
             raise DatasetNotFoundError(str(query_id))
         return query
 
