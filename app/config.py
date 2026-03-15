@@ -57,8 +57,8 @@ class Settings(BaseSettings):
     ] = "gpt-4.1-mini"
 
     # V2: Per-complexity iteration limits
-    AGENT_MAX_ITERATIONS_SIMPLE: Annotated[int, Field(gt=0)] = 8
-    AGENT_MAX_ITERATIONS_MODERATE: Annotated[int, Field(gt=0)] = 15
+    AGENT_MAX_ITERATIONS_SIMPLE: Annotated[int, Field(gt=0)] = 15
+    AGENT_MAX_ITERATIONS_MODERATE: Annotated[int, Field(gt=0)] = 20
     AGENT_MAX_ITERATIONS_COMPLEX: Annotated[int, Field(gt=0)] = 25
 
     # V2: Streaming
