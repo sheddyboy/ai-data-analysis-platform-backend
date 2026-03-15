@@ -1,106 +1,40 @@
-"""Tools for loading and accessing datasets."""
+"""Tool factory for loading and describing the current dataset."""
 
-import pandas as pd
-from langchain.tools import Tool
-from typing import Dict, Any, Optional
-
-
-class DatasetContext:
-    """Context object to hold the current dataset during agent execution."""
-
-    def __init__(self):
-        self.df: Optional[pd.DataFrame] = None
-        self.working_df: Optional[pd.DataFrame] = None
-        self.metadata: Dict[str, Any] = {}
-        self.exec_namespace: Optional[Dict[str, Any]] = None
-
-    def load_dataset(self, df: pd.DataFrame, metadata: Dict[str, Any]):
-        """Load a dataset into the context."""
-        self.df = df
-        self.working_df = None
-        self.metadata = metadata
-        self.exec_namespace = None  # reset namespace on new dataset load
-
-    def get_or_create_namespace(
-        self, pd_module: Any, np_module: Any, safe_builtins: dict
-    ) -> Dict[str, Any]:
-        """Return the persistent execution namespace, creating it if needed."""
-        if self.exec_namespace is None:
-            self.exec_namespace = {
-                "df": self.get_dataframe().copy(),
-                "pd": pd_module,
-                "np": np_module,
-                "set_working_df": self.set_working_dataframe,
-                "__builtins__": safe_builtins,
-            }
-        return self.exec_namespace
-
-    def get_dataframe(self) -> pd.DataFrame:
-        """Get the current dataframe."""
-        if self.df is None:
-            raise ValueError("No dataset loaded")
-        return self.df
-
-    def set_working_dataframe(self, df: pd.DataFrame):
-        """Set a filtered/sorted working dataframe for subsequent operations."""
-        self.working_df = df
-
-    def get_working_dataframe(self) -> pd.DataFrame:
-        """Get the working dataframe if set, otherwise the full dataframe."""
-        if self.working_df is not None:
-            return self.working_df
-        if self.df is None:
-            raise ValueError("No dataset loaded")
-        return self.df
-
-    def get_metadata(self) -> Dict[str, Any]:
-        """Get dataset metadata."""
-        return self.metadata
+from langchain_core.tools import tool
+from app.agents.context import AnalysisContext
 
 
-# Global context for the current dataset
-dataset_context = DatasetContext()
+def build_load_dataset_tool(context: AnalysisContext):
+    """Return a load_dataset tool bound to the given request-scoped context."""
 
+    @tool
+    def load_dataset(query: str = "") -> str:  # noqa: ARG001
+        """Load and describe the dataset. Call this first to understand available columns and data types.
 
-def load_dataset_func(input_str: str) -> str:
-    """
-    Load and describe the dataset.
-    
-    Args:
-        input_str: Not used (tool requires no input)
-        
-    Returns:
-        Description of the loaded dataset
-    """
-    try:
-        df = dataset_context.get_dataframe()
-        metadata = dataset_context.get_metadata()
-        
-        # Build description
-        description = f"""Dataset loaded successfully:
-- Rows: {len(df)}
-- Columns: {len(df.columns)}
-- Column Names: {', '.join(df.columns.tolist())}
+        Returns column names, types, row count, and the first 3 rows.
+        """
+        try:
+            df = context.get_dataframe()
+            metadata = context.metadata
 
-Column Types:
-"""
-        for col, dtype in zip(df.columns, df.dtypes):
-            description += f"  - {col}: {dtype}\n"
-        
-        # Add sample data
-        description += f"\nFirst 3 rows:\n{df.head(3).to_string()}\n"
-        
-        return description
-        
-    except Exception as e:
-        return f"Error loading dataset: {str(e)}"
+            description = (
+                f"Dataset loaded successfully:\n"
+                f"- Rows: {len(df)}\n"
+                f"- Columns: {len(df.columns)}\n"
+                f"- Column Names: {', '.join(df.columns.tolist())}\n\n"
+                f"Column Types:\n"
+            )
+            for col, dtype in zip(df.columns, df.dtypes):
+                description += f"  - {col}: {dtype}\n"
 
+            description += f"\nFirst 3 rows:\n{df.head(3).to_string()}\n"
 
-# Create the LangChain tool
-load_dataset_tool = Tool(
-    name="load_dataset",
-    description="""Use this tool to load and examine the dataset. 
-    This should typically be your first step to understand what data is available.
-    The tool will show you the column names, types, and sample data.""",
-    func=load_dataset_func
-)
+            if metadata.get("summary_statistics"):
+                description += "\nNumeric column statistics available (call execute_python for details).\n"
+
+            return description
+
+        except Exception as e:
+            return f"Error loading dataset: {str(e)}"
+
+    return load_dataset

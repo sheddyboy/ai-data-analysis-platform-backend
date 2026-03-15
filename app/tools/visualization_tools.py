@@ -1,118 +1,59 @@
-"""Tools for creating data visualizations."""
+"""Tool factory for creating data visualizations."""
+
+import json
+from typing import Literal, Optional
 
 import plotly.express as px
-import plotly.graph_objects as go
-import json
-from langchain.tools import Tool
-from typing import Dict, Any
-from app.tools.dataset_tools import dataset_context
-from app.utils.json_parser import _parse_json_input
+from langchain_core.tools import tool
+from app.agents.context import AnalysisContext
 
 
-class VisualizationStorage:
-    """Storage for visualizations created during agent execution."""
-    
-    def __init__(self):
-        self.visualizations = []
-    
-    def add_visualization(self, viz: Dict[str, Any]):
-        """Add a visualization to storage."""
-        self.visualizations.append(viz)
-    
-    def get_visualizations(self):
-        """Get all visualizations."""
-        return self.visualizations
-    
-    def clear(self):
-        """Clear all visualizations."""
-        self.visualizations = []
+def build_create_visualization_tool(context: AnalysisContext):
+    """Return a create_visualization tool bound to the given request-scoped context."""
 
+    @tool
+    def create_visualization(
+        chart_type: Literal["bar", "line", "scatter", "pie", "histogram"],
+        x: str,
+        y: Optional[str] = None,
+        title: str = "Chart",
+        color: Optional[str] = None,
+    ) -> str:
+        """Create a data visualization from the working DataFrame.
 
-# Global visualization storage
-viz_storage = VisualizationStorage()
+        IMPORTANT: You must call set_working_df(result_df) inside execute_python
+        before calling this tool. The tool uses whatever DataFrame was passed to
+        set_working_df — it cannot access variables in the execution namespace.
 
-
-def create_visualization_func(input_str: str) -> str:
-    """
-    Create a visualization from the dataset.
-    
-    Input format (JSON string):
-    {
-        "chart_type": "bar" | "line" | "scatter" | "pie" | "histogram",
-        "x": "x_column",
-        "y": "y_column",
-        "title": "Chart Title" (optional),
-        "color": "color_column" (optional)
-    }
-    
-    Args:
-        input_str: JSON string with visualization parameters
-        
-    Returns:
-        Confirmation message
-    """
-    try:
-        df = dataset_context.get_working_dataframe()
+        Supported chart types: bar, line, scatter, pie, histogram.
+        """
         try:
-            params = _parse_json_input(input_str)
-        except ValueError as e:
-            return f"Error parsing visualization parameters: {e}"
-        
-        chart_type = params["chart_type"]
-        x = params.get("x")
-        y = params.get("y")
-        title = params.get("title", f"{chart_type.capitalize()} Chart")
-        color = params.get("color")
-        
-        # Create visualization based on type
-        if chart_type == "bar":
-            fig = px.bar(df, x=x, y=y, title=title, color=color)
-        
-        elif chart_type == "line":
-            fig = px.line(df, x=x, y=y, title=title, color=color)
-        
-        elif chart_type == "scatter":
-            fig = px.scatter(df, x=x, y=y, title=title, color=color)
-        
-        elif chart_type == "pie":
-            fig = px.pie(df, names=x, values=y, title=title)
-        
-        elif chart_type == "histogram":
-            fig = px.histogram(df, x=x, title=title, color=color)
-        
-        else:
-            return f"Unknown chart type: {chart_type}"
-        
-        # Convert to JSON-serializable format
-        fig_json = json.loads(fig.to_json() or "{}")
-        viz_data = {
-            "type": chart_type,
-            "title": title,
-            "data": fig_json["data"],
-            "layout": fig_json["layout"]
-        }
-        
-        # Store visualization
-        viz_storage.add_visualization(viz_data)
-        
-        return f"Created {chart_type} chart: '{title}'"
-    
-    except Exception as e:
-        return f"Error creating visualization: {str(e)}"
+            df = context.get_working_dataframe()
 
+            if chart_type == "bar":
+                fig = px.bar(df, x=x, y=y, title=title, color=color)
+            elif chart_type == "line":
+                fig = px.line(df, x=x, y=y, title=title, color=color)
+            elif chart_type == "scatter":
+                fig = px.scatter(df, x=x, y=y, title=title, color=color)
+            elif chart_type == "pie":
+                fig = px.pie(df, names=x, values=y, title=title)
+            elif chart_type == "histogram":
+                fig = px.histogram(df, x=x, title=title, color=color)
+            else:
+                return f"Unknown chart type: {chart_type}. Use one of: bar, line, scatter, pie, histogram."
 
-# Create LangChain tool
-create_visualization_tool = Tool(
-    name="create_visualization",
-    description="""Create data visualizations (charts) from the dataset.
-    Input must be a JSON string with visualization parameters.
-    
-    Supported chart types: bar, line, scatter, pie, histogram
-    
-    Examples:
-    - Bar chart: {"chart_type": "bar", "x": "region", "y": "revenue", "title": "Revenue by Region"}
-    - Line chart: {"chart_type": "line", "x": "date", "y": "sales", "title": "Sales Over Time"}
-    - Pie chart: {"chart_type": "pie", "x": "category", "y": "count", "title": "Distribution"}
-    - Scatter: {"chart_type": "scatter", "x": "age", "y": "income", "color": "gender"}""",
-    func=create_visualization_func
-)
+            fig_json = json.loads(fig.to_json() or "{}")
+            viz_data = {
+                "type": chart_type,
+                "title": title,
+                "data": fig_json["data"],
+                "layout": fig_json["layout"],
+            }
+            context.add_visualization(viz_data)
+            return f"Created {chart_type} chart: '{title}'"
+
+        except Exception as e:
+            return f"Error creating visualization: {str(e)}"
+
+    return create_visualization

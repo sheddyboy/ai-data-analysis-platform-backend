@@ -1,13 +1,11 @@
-"""Tools for the data analyst agent."""
+"""Tool factories for the v2 data analyst graph."""
 
-from app.tools.dataset_tools import load_dataset_tool
-from app.tools.sandbox_tool import execute_python_tool
-from app.tools.visualization_tools import create_visualization_tool
-from app.tools.insight_tools import generate_insights_tool
+from app.tools.dataset_tools import build_load_dataset_tool
+from app.tools.sandbox_tool import build_execute_python_tool
+from app.tools.visualization_tools import build_create_visualization_tool
 
 __all__ = [
-    "load_dataset_tool",
-    "execute_python_tool",
-    "create_visualization_tool",
-    "generate_insights_tool",
+    "build_load_dataset_tool",
+    "build_execute_python_tool",
+    "build_create_visualization_tool",
 ]
