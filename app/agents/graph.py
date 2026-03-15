@@ -135,14 +135,14 @@ def build_graph(context: AnalysisContext):
             ]
 
         logger.info(
-            "[executor turn %d] calling LLM (%s)", turn, settings.EXECUTOR_MODEL
+            "[executor turn {}] calling LLM ({})", turn, settings.EXECUTOR_MODEL
         )
         response = cast(AIMessage, await executor_llm.ainvoke(messages))
 
         tool_calls = getattr(response, "tool_calls", None) or []
         tool_names = [tc.get("name") for tc in tool_calls]
         logger.info(
-            "[executor turn %d] LLM chose tools: %s", turn, tool_names or "(none)"
+            "[executor turn {}] LLM chose tools: {}", turn, tool_names or "(none)"
         )
 
         # Collect tool output text for the synthesizer transcript
