@@ -36,8 +36,12 @@ The synthesizer will generate the final answer after you finish. You signal comp
 {plan_block}
 
 Rules:
-- Always call load_dataset first, then execute every remaining step in order
+- Always call load_dataset first, then execute ONLY the steps listed in the plan above — no extra exploration
+- Do NOT print exploratory summaries, distributions, or counts unless the plan explicitly lists them
+- The plan has {plan_step_count} steps (excluding load_dataset). Call finish_analysis after exactly those steps are done
 - Use execute_python for all pandas/numpy operations — use print() to see output
+- Do NOT use import statements inside execute_python — pd and np are pre-injected into the namespace
+- Do NOT use matplotlib, seaborn, or any plotting library inside execute_python — use create_visualization instead
 - Before filtering on categorical columns, print unique values first to verify exact strings
 - Variables persist across execute_python calls — build incrementally, don't repeat setup
 - Call set_working_df(result_df) inside execute_python BEFORE calling create_visualization
@@ -63,7 +67,11 @@ def _build_executor_system(state: AgentState) -> str:
     hints = state.get("error_hints", [])
     hints_block = "\n".join(f"- {h}" for h in hints) if hints else "None."
 
-    return _EXECUTOR_SYSTEM.format(plan_block=plan_block, hints_block=hints_block)
+    return _EXECUTOR_SYSTEM.format(
+        plan_block=plan_block,
+        plan_step_count=len(steps),
+        hints_block=hints_block,
+    )
 
 
 def _get_max_iterations(state: AgentState) -> int:
