@@ -130,5 +130,5 @@ class ErrorMemoryService:
             obs = step.get("observation", "")
             for pattern_key, regex in _ERROR_DETECTORS.items():
                 if regex.search(obs):
-                    hint = KNOWN_PATTERNS.get(pattern_key, obs[:120])
+                    hint = KNOWN_PATTERNS.get(pattern_key) or obs[:120]
                     self.record_error(pattern_key, hint)
