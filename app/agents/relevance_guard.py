@@ -55,7 +55,9 @@ class RelevanceGuard:
         Returns True if relevant, raises IrrelevantQuestionError if not.
         Falls back to permissive (True) on LLM failure.
         """
-        dataset_info = self._build_dataset_context(column_names, column_types, sample_data)
+        dataset_info = self._build_dataset_context(
+            column_names, column_types, sample_data
+        )
         prompt = (
             f"Dataset:\n{dataset_info}\n\n"
             f'User question: "{question}"\n\n'
@@ -63,10 +65,17 @@ class RelevanceGuard:
         )
 
         try:
-            result = cast(RelevanceResult, await self._structured_llm.ainvoke([
-                SystemMessage(content=_SYSTEM_PROMPT),
-                HumanMessage(content=prompt),
-            ]))
+            result = cast(
+                RelevanceResult,
+                await self._structured_llm.ainvoke(
+                    [
+                        SystemMessage(content=_SYSTEM_PROMPT),
+                        HumanMessage(content=prompt),
+                    ]
+                ),
+            )
+
+            logger.info("Relevance validation result: {}", result)
 
             if not result.is_relevant:
                 raise IrrelevantQuestionError(

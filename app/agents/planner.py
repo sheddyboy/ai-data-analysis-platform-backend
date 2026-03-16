@@ -10,6 +10,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.agents.state import AgentState
 from app.schemas.agent import AnalysisPlan
 from app.config import settings
+from loguru import logger
 
 
 _PLANNER_SYSTEM = """You are a senior data analyst. Your sole job is to create a step-by-step
@@ -73,6 +74,7 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
     ]
 
     plan = cast(AnalysisPlan, await structured_llm.ainvoke(messages))
+    logger.info("Generated analysis plan: {}", plan.steps)
 
     return {
         "analysis_plan": plan.model_dump(),

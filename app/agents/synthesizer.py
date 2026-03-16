@@ -3,6 +3,7 @@
 import json
 from typing import Any, cast
 
+from loguru import logger
 from pydantic import SecretStr
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -45,10 +46,16 @@ async def synthesizer_node(state: AgentState) -> dict[str, Any]:
         f"Produce a structured final answer."
     )
 
-    result = cast(AnalysisResult, await structured_llm.ainvoke([
-        SystemMessage(content=_SYNTHESIZER_SYSTEM),
-        HumanMessage(content=prompt),
-    ]))
+    result = cast(
+        AnalysisResult,
+        await structured_llm.ainvoke(
+            [
+                SystemMessage(content=_SYNTHESIZER_SYSTEM),
+                HumanMessage(content=prompt),
+            ]
+        ),
+    )
+    logger.info("Generated analysis result: {}", result.answer)
 
     return {
         "answer": result.answer,
@@ -95,10 +102,16 @@ async def follow_up_node(state: AgentState) -> dict[str, Any]:
         f"Suggest 3–5 follow-up questions."
     )
 
-    result = cast(FollowUpQuestions, await structured_llm.ainvoke([
-        SystemMessage(content=_FOLLOWUP_SYSTEM),
-        HumanMessage(content=prompt),
-    ]))
+    result = cast(
+        FollowUpQuestions,
+        await structured_llm.ainvoke(
+            [
+                SystemMessage(content=_FOLLOWUP_SYSTEM),
+                HumanMessage(content=prompt),
+            ]
+        ),
+    )
+    logger.info("Generated follow-up questions: {}", result.questions)
 
     follow_ups = [q.model_dump() for q in result.questions]
 
@@ -110,6 +123,7 @@ async def follow_up_node(state: AgentState) -> dict[str, Any]:
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _extract_transcript(state: AgentState) -> str:
     """Build a readable transcript from messages for the synthesizer prompt."""
