@@ -178,6 +178,7 @@ async def query_dataset_stream(
                 "analysis_plan": None,
                 "messages": [],
                 "tool_outputs": [],
+                "current_step_index": 0,
                 "visualizations": [],
                 "answer": None,
                 "key_findings": [],

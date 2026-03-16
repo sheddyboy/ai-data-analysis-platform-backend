@@ -34,6 +34,7 @@ class AgentState(TypedDict):
     # add_messages reducer appends incoming messages rather than overwriting
     messages: Annotated[list[BaseMessage], add_messages]
     tool_outputs: list[str]       # raw text outputs from each tool invocation
+    current_step_index: int       # which plan step to execute next (0-based)
 
     # ── Accumulated tool results ─────────────────────────────────────────────
     visualizations: list[dict[str, Any]]

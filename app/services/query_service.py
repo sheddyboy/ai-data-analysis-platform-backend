@@ -4,6 +4,7 @@ import time
 from uuid import UUID
 from typing import Optional, cast
 
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -123,6 +124,7 @@ class QueryService:
             "analysis_plan": None,
             "messages": [],
             "tool_outputs": [],
+            "current_step_index": 0,
             "visualizations": [],
             "answer": None,
             "key_findings": [],
@@ -143,6 +145,7 @@ class QueryService:
                     initial_state, config={"recursion_limit": recursion_limit}
                 ),
             )
+            logger.info("Final agent state: {}", final_state.get("answer"))
 
             # final_state = cast(AgentState, await graph.ainvoke(initial_state))
         except Exception as e:
