@@ -53,11 +53,23 @@ PostgreSQL + Redis cache
 
 | Node | Model | Role |
 |------|-------|------|
-| **planner** | gpt-4o | Reads dataset schema + question, produces structured `AnalysisPlan` (steps, complexity, needs_visualization). No tool access — pure reasoning. |
-| **tool_executor** | gpt-4o-mini | Drives the tool-calling loop using the plan as context. Calls `load_dataset`, `execute_python`, `create_visualization`. |
+| **planner** | gpt-4o | Reads dataset schema + question (plus any prior error hints or parent query context), produces a structured `AnalysisPlan` (ordered steps, complexity, needs_visualization). No tool access — pure reasoning. |
+| **tool_executor** | gpt-4o-mini | Drives the tool-calling loop step-by-step. Each turn injects a step-specific `HumanMessage` and enforces the correct tool via OpenAI `tool_choice` — the LLM physically cannot call a different tool. `load_dataset` is always forced first as a pre-step, then each plan step in order, and finally `finish_analysis` once all steps succeed. On tool errors the step index is not advanced, triggering a retry of the same step. |
 | **tools** | — | LangGraph `ToolNode` dispatches tool calls and returns `ToolMessage` results. |
-| **synthesizer** | gpt-4o | Reads tool transcript, produces structured `AnalysisResult` (answer, key_findings, confidence). |
+| **synthesizer** | gpt-4o | Reads the full tool transcript and produces a structured `AnalysisResult` (answer, key_findings, confidence). |
 | **follow_up_gen** | gpt-4o | Generates 3–5 `FollowUpQuestion` objects with rationale for each. |
+
+#### tool_executor step lifecycle
+
+```
+turn 1:  force load_dataset  → load the dataset into context
+turn 2…N: for each plan step → force the tool named in that step (execute_python / create_visualization)
+            └─ on error: retry the same step (step index not advanced)
+            └─ on success: advance to next step
+turn N+1: all steps done → force finish_analysis → route to synthesizer
+```
+
+Max iterations are capped per complexity level (`AGENT_MAX_ITERATIONS_SIMPLE/MODERATE/COMPLEX`). If the cap is reached before `finish_analysis`, the graph routes directly to the synthesizer with whatever results are available.
 
 ## Quick Start
 
