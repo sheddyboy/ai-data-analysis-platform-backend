@@ -137,6 +137,7 @@ def build_graph(context: AnalysisContext):
         # First call: seed the conversation
         if not messages:
             system_content = _build_executor_system(state)
+            logger.info("[executor turn {}] system prompt:\n{}", turn, system_content)
             messages = [
                 SystemMessage(content=system_content),
                 HumanMessage(content=state["question"]),
