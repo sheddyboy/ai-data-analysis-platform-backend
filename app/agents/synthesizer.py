@@ -40,8 +40,13 @@ async def synthesizer_node(state: AgentState) -> dict[str, Any]:
     # Build context from messages
     tool_transcript = _extract_transcript(state)
 
+    context_block = ""
+    if state.get("conversation_history"):
+        context_block = f"Conversation context:\n{state['conversation_history']}\n\n"
+
     prompt = (
         f'Original question: "{state["question"]}"\n\n'
+        f"{context_block}"
         f"Analysis transcript:\n{tool_transcript}\n\n"
         f"Produce a structured final answer."
     )
