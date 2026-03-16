@@ -12,9 +12,13 @@ A production-grade backend that lets users interact with their datasets using na
 | Feature | v2 | v3 |
 |---------|----|----|
 | Conversation sessions | `session_id` stored on queries but no dedicated model | Persistent `Session` model with full CRUD — queries belong to a session |
-| Multi-turn context | Planner received only the immediate parent query answer | `SessionService` builds a rolling conversation history (up to 7 turns) passed to **both** planner and synthesizer |
+| Multi-turn context | Planner received only the immediate parent query answer | `SessionService` builds a rolling conversation history (up to 7 turns) passed to **both** planner and synthesizer — last 2 turns include the full answer, earlier turns include question + key findings only (to control token usage) |
 | Follow-up accuracy | Synthesizer answered without prior context, causing wrong answers on follow-ups like "list their names" | Synthesizer receives full conversation history — follow-up questions resolve correctly |
-| Session API | No session endpoints | `POST /sessions`, `GET /sessions/{id}`, `POST /sessions/{id}/query` |
+| Session API | No session endpoints | `POST /sessions`, `GET /sessions/{id}`, `POST /sessions/{id}/query`, `POST /sessions/{id}/query/stream` |
+| Session auto-title | — | Session title is automatically set from the first question if not provided at creation time |
+| Streaming in sessions | No streaming support in session queries | `POST /sessions/{id}/query/stream` — full SSE stream within a session, conversation history included |
+
+**Commits:** [`9a692b1`](../../commit/9a692b1) feat(sessions) · [`d5ab861`](../../commit/d5ab861) refactor(state) · [`02a4b61`](../../commit/02a4b61) fix(synthesizer) · [`1998ee7`](../../commit/1998ee7) feat(streaming)
 
 ## What's new in v2
 
@@ -179,7 +183,15 @@ curl -X POST http://localhost:8000/api/v1/sessions/abc123-.../query \
 curl -X POST http://localhost:8000/api/v1/sessions/abc123-.../query \
   -H "Content-Type: application/json" \
   -d '{"question": "List their names"}'
+
+# 4. Stream a session query (same SSE events as /query/stream, with full conversation context)
+curl -X POST http://localhost:8000/api/v1/sessions/abc123-.../query/stream \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Show a chart of their monthly sales"}' \
+  --no-buffer
 ```
+
+> **Auto-title:** If you omit `title` when creating a session, the session is automatically named after the first question asked.
 
 ### Query with parent context (legacy)
 
@@ -219,6 +231,9 @@ data: {"tool": "execute_python", "input": "print(df.groupby(...))"}
 
 event: tool_result
 data: {"tool": "execute_python", "output": "Product A: 12,340\n..."}
+
+event: step_complete
+data: {"step_number": 2, "description": "Group by product, sum revenue", "tool": "execute_python", "steps_completed": 2, "total_steps": 3}
 
 event: complete
 data: {"query_id": "...", "answer": "...", "follow_up_questions": [...]}
