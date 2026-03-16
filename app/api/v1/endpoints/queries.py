@@ -190,6 +190,8 @@ async def query_dataset_stream(
 
             # Stream graph events
             final_state: AgentState = initial_state
+            _prev_step_idx: int = 0
+            _plan_steps: list[dict] = []
             async for event in graph.astream_events(initial_state, version="v2"):
                 kind = event.get("event", "")
                 name = event.get("name", "")
@@ -201,7 +203,22 @@ async def query_dataset_stream(
                     output = event.get("data", {}).get("output", {})
                     plan = output.get("analysis_plan")
                     if plan:
+                        _plan_steps = plan.get("steps", [])
                         yield sse("plan_ready", {"plan": plan})
+
+                elif kind == "on_chain_end" and name == "tool_executor":
+                    output = event.get("data", {}).get("output", {})
+                    new_idx = output.get("current_step_index", _prev_step_idx)
+                    if new_idx > _prev_step_idx and _plan_steps:
+                        completed_step = _plan_steps[_prev_step_idx]
+                        yield sse("step_complete", {
+                            "step_number": completed_step.get("step_number"),
+                            "description": completed_step.get("description"),
+                            "tool": completed_step.get("tool_to_use"),
+                            "steps_completed": new_idx,
+                            "total_steps": len(_plan_steps),
+                        })
+                    _prev_step_idx = new_idx
 
                 elif kind == "on_chat_model_stream":
                     pass  # skip token-level streaming for now
@@ -221,6 +238,18 @@ async def query_dataset_stream(
                 elif kind == "on_chain_end" and name == "LangGraph":
                     # Final state from the top-level graph
                     final_state = event.get("data", {}).get("output", initial_state)
+
+            # Flush step_complete for the last step — on_chain_end fires before the
+            # tool runs, so the final step is always one invocation behind and missed.
+            for i in range(_prev_step_idx, len(_plan_steps)):
+                step = _plan_steps[i]
+                yield sse("step_complete", {
+                    "step_number": step.get("step_number"),
+                    "description": step.get("description"),
+                    "tool": step.get("tool_to_use"),
+                    "steps_completed": i + 1,
+                    "total_steps": len(_plan_steps),
+                })
 
             # Persist result
             execution_time = time.time() - start_time
