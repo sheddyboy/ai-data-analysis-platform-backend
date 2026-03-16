@@ -7,6 +7,15 @@
 
 A production-grade backend that lets users interact with their datasets using natural language. Upload a CSV or Excel file, ask questions in plain English, and get back structured answers, auto-generated charts, key findings, and suggested follow-up questions — all powered by a multi-node LangGraph agent.
 
+## What's new in v3
+
+| Feature | v2 | v3 |
+|---------|----|----|
+| Conversation sessions | `session_id` stored on queries but no dedicated model | Persistent `Session` model with full CRUD — queries belong to a session |
+| Multi-turn context | Planner received only the immediate parent query answer | `SessionService` builds a rolling conversation history (up to 7 turns) passed to **both** planner and synthesizer |
+| Follow-up accuracy | Synthesizer answered without prior context, causing wrong answers on follow-ups like "list their names" | Synthesizer receives full conversation history — follow-up questions resolve correctly |
+| Session API | No session endpoints | `POST /sessions`, `GET /sessions/{id}`, `POST /sessions/{id}/query` |
+
 ## What's new in v2
 
 | Feature | v1 | v2 |
@@ -56,7 +65,7 @@ PostgreSQL + Redis cache
 | **planner** | gpt-4o | Reads dataset schema + question (plus any prior error hints or parent query context), produces a structured `AnalysisPlan` (ordered steps, complexity, needs_visualization). No tool access — pure reasoning. |
 | **tool_executor** | gpt-4o-mini | Drives the tool-calling loop step-by-step. Each turn injects a step-specific `HumanMessage` and enforces the correct tool via OpenAI `tool_choice` — the LLM physically cannot call a different tool. `load_dataset` is always forced first as a pre-step, then each plan step in order, and finally `finish_analysis` once all steps succeed. On tool errors the step index is not advanced, triggering a retry of the same step. |
 | **tools** | — | LangGraph `ToolNode` dispatches tool calls and returns `ToolMessage` results. |
-| **synthesizer** | gpt-4o | Reads the full tool transcript and produces a structured `AnalysisResult` (answer, key_findings, confidence). |
+| **synthesizer** | gpt-4o | Reads the full tool transcript **and conversation history** (if in a session) and produces a structured `AnalysisResult` (answer, key_findings, confidence). Receiving prior context is what enables correct answers to follow-up questions like "list their names". |
 | **follow_up_gen** | gpt-4o | Generates 3–5 `FollowUpQuestion` objects with rationale for each. |
 
 #### tool_executor step lifecycle
@@ -150,16 +159,37 @@ curl -X POST http://localhost:8000/api/v1/queries/datasets/{dataset_id}/query \
 }
 ```
 
-### Query with conversation context
+### Sessions (multi-turn conversation)
 
-Pass `parent_query_id` to continue a previous analysis — the planner receives the prior answer as context:
+Create a session, then send queries through it — the full conversation history is automatically passed to both the planner and synthesizer on every turn.
+
+```bash
+# 1. Create a session
+curl -X POST http://localhost:8000/api/v1/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"dataset_id": "550e8400-...", "title": "Sales analysis"}'
+# → {"session_id": "abc123-...", ...}
+
+# 2. Ask a question
+curl -X POST http://localhost:8000/api/v1/sessions/abc123-.../query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Top 4 artists in Brazil"}'
+
+# 3. Follow up — the system knows "their" refers to the artists from turn 1
+curl -X POST http://localhost:8000/api/v1/sessions/abc123-.../query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "List their names"}'
+```
+
+### Query with parent context (legacy)
+
+Pass `parent_query_id` directly on the `/query` endpoint for single-hop context without a session:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/queries/datasets/{dataset_id}/query \
   -H "Content-Type: application/json" \
   -d '{
     "question": "How has North region revenue trended over time?",
-    "session_id": "abc123-...",
     "parent_query_id": "7c9e6679-..."
   }'
 ```
@@ -237,18 +267,27 @@ app/
 │   └── query.py            # API request/response schemas
 ├── services/
 │   ├── query_service.py    # Orchestrates graph execution + persistence
+│   ├── session_service.py  # Session CRUD + conversation history builder
 │   ├── dataset_service.py
 │   ├── metadata_extractor.py
 │   ├── cache_service.py
 │   └── error_memory.py     # Learns from agent errors across sessions
-├── models/dataset.py       # SQLAlchemy models (Dataset, Query)
+├── models/
+│   ├── dataset.py          # SQLAlchemy models (Dataset, Query)
+│   └── session.py          # Session model
+├── schemas/
+│   ├── agent.py            # AnalysisPlan, AnalysisResult, FollowUpQuestions
+│   ├── query.py            # API request/response schemas
+│   └── session.py          # Session request/response schemas
 ├── api/v1/endpoints/
 │   ├── datasets.py
-│   └── queries.py          # /query and /query/stream endpoints
+│   ├── queries.py          # /query and /query/stream endpoints
+│   └── sessions.py         # /sessions CRUD + /sessions/{id}/query
 └── config.py
 alembic/versions/
 ├── 001_initial.py
-└── 002_v2_query_fields.py  # follow_up_questions, session_id, parent_query_id, ...
+├── 002_v2_query_fields.py  # follow_up_questions, session_id, parent_query_id, ...
+└── 003_v3_sessions.py      # sessions table + session FK on queries
 ```
 
 ## Tech Stack
@@ -285,7 +324,7 @@ docker-compose ps
 ## Roadmap
 
 - [ ] Multi-dataset cross-join queries
-- [ ] Persistent conversation sessions with full message history
+- [x] Persistent conversation sessions with full message history
 - [ ] Scheduled recurring analyses
 - [ ] Export results to PDF/Excel
 - [ ] WebSocket endpoint for bidirectional follow-up conversation
