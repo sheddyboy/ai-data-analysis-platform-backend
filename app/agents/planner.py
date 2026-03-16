@@ -43,8 +43,8 @@ def _build_planner_prompt(state: AgentState) -> str:
         )
 
     parent_block = ""
-    if state.get("parent_context"):
-        parent_block = f"\nPrevious query context (build on this if relevant):\n{state['parent_context']}"
+    if state.get("conversation_history"):
+        parent_block = f"\n{state['conversation_history']}"
 
     return (
         f"Dataset: {row_count} rows\n"
@@ -68,6 +68,7 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
     structured_llm = llm.with_structured_output(AnalysisPlan)
 
     prompt = _build_planner_prompt(state)
+    logger.info("Sending request to planner:\n{}", prompt)
     messages = [
         SystemMessage(content=_PLANNER_SYSTEM),
         HumanMessage(content=prompt),

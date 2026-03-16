@@ -36,9 +36,16 @@ class QueryService:
         question: str,
         session_id: Optional[UUID] = None,
         parent_query_id: Optional[UUID] = None,
+        conversation_history: Optional[str] = None,
     ) -> Query:
         """
         Execute a query against a dataset using the v2 LangGraph agent.
+
+        Args:
+            conversation_history: Pre-built multi-turn context string from SessionService.
+                                  When provided, cache is skipped and the history is fed
+                                  directly to the planner. If omitted and parent_query_id
+                                  is set, a single-parent fallback context is built.
 
         Raises:
             DatasetNotFoundError: If dataset not found
@@ -52,8 +59,9 @@ class QueryService:
         # Get dataset
         dataset = await self.dataset_service.get_dataset(dataset_id)
 
-        # Check cache (skip for follow-up queries to respect conversation context)
-        if not parent_query_id:
+        # Skip cache when we have conversation context (results must reflect history)
+        has_context = bool(conversation_history or parent_query_id)
+        if not has_context:
             cached_result = await cache_service.get(str(dataset_id), question)
             if cached_result:
                 query = Query(
@@ -98,12 +106,11 @@ class QueryService:
             "summary_statistics": dataset.summary_statistics,
         }
 
-        # Resolve parent context for conversation threading
-        parent_context: Optional[str] = None
-        if parent_query_id:
+        # Fallback: single-parent context for backwards-compat with legacy /query endpoint
+        if not conversation_history and parent_query_id:
             parent_query = await self._get_query_or_none(parent_query_id)
             if parent_query and parent_query.answer:
-                parent_context = (
+                conversation_history = (
                     f"Previous question: {parent_query.question}\n"
                     f"Previous answer summary: {parent_query.answer[:400]}"
                 )
@@ -120,7 +127,7 @@ class QueryService:
             "question": question,
             "dataset_metadata": metadata,
             "error_hints": error_hints,
-            "parent_context": parent_context,
+            "conversation_history": conversation_history,
             "analysis_plan": None,
             "messages": [],
             "tool_outputs": [],

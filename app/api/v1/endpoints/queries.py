@@ -174,7 +174,7 @@ async def query_dataset_stream(
                 "question": request.question,
                 "dataset_metadata": metadata,
                 "error_hints": error_hints,
-                "parent_context": None,
+                "conversation_history": None,
                 "analysis_plan": None,
                 "messages": [],
                 "tool_outputs": [],

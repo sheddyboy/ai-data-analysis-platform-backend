@@ -25,7 +25,7 @@ class AgentState(TypedDict):
     question: str
     dataset_metadata: dict[str, Any]
     error_hints: list[str]
-    parent_context: Optional[str]  # summarized answer from parent query if present
+    conversation_history: Optional[str]  # summarized multi-turn history from session
 
     # ── Planner output ───────────────────────────────────────────────────────
     analysis_plan: Optional[dict[str, Any]]  # serialized AnalysisPlan
