@@ -18,7 +18,7 @@ from langgraph.prebuilt import ToolNode
 
 from app.agents.context import AnalysisContext
 from app.agents.state import AgentState
-from app.agents.planner import planner_node
+from app.agents.planner import planner_node, _extract_usage, _merge_usage
 from app.agents.synthesizer import synthesizer_node, follow_up_node
 from app.tools import (
     build_load_dataset_tool,
@@ -114,6 +114,7 @@ def build_graph(context: AnalysisContext):
         model=settings.EXECUTOR_MODEL,
         temperature=0.0,
         api_key=SecretStr(settings.OPENAI_API_KEY),
+        stream_usage=True,
     )
     available_tool_names = {t.name for t in tools}
 
@@ -282,6 +283,8 @@ def build_graph(context: AnalysisContext):
             forced_tool or "(required)",
         )
         response = cast(AIMessage, await bound_llm.ainvoke(full_messages))
+        extracted = _extract_usage(response)
+        token_usage = _merge_usage(state.get("token_usage") or {}, extracted)
         logger.info(
             "[executor turn {}] LLM response\ncontent: {}\ntool_calls: {}",
             turn,
@@ -308,6 +311,7 @@ def build_graph(context: AnalysisContext):
             "visualizations": visualizations,
             "current_step_index": step_idx,
             "agent_steps": state.get("agent_steps", []) + [step_info],
+            "token_usage": token_usage,
         }
 
     # ── Edge condition ───────────────────────────────────────────────────────

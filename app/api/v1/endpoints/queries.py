@@ -3,13 +3,18 @@
 import json
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
+from app.core.limiter import limiter
+from loguru import logger
 from app.database import get_db
 from app.models.dataset import Query
+from app.models.user import User
+from app.services.auth_service import get_current_user
+from app.services.dataset_service import DatasetService
 from app.services.query_service import QueryService
 from app.schemas.query import (
     QueryRequest,
@@ -66,6 +71,7 @@ def _build_query_response(query: Query) -> QueryResponse:
         created_at=query.created_at,
         session_id=query.session_id,
         parent_query_id=query.parent_query_id,
+        token_usage=query.token_usage,
     )
 
 
@@ -76,10 +82,13 @@ def _build_query_response(query: Query) -> QueryResponse:
     summary="Query a dataset",
     description="Ask a natural language question about a dataset",
 )
+@limiter.limit("20/minute")
 async def query_dataset(
+    request: Request,
     dataset_id: UUID,
-    request: QueryRequest,
+    body: QueryRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Query a dataset with a natural language question.
@@ -92,12 +101,13 @@ async def query_dataset(
 
     Pass `parent_query_id` to continue a previous conversation with full context.
     """
+    await DatasetService(db).get_dataset(dataset_id, user_id=current_user.id)
     service = QueryService(db)
     query = await service.execute_query(
         dataset_id=dataset_id,
-        question=request.question,
-        session_id=request.session_id,
-        parent_query_id=request.parent_query_id,
+        question=body.question,
+        session_id=body.session_id,
+        parent_query_id=body.parent_query_id,
     )
     return _build_query_response(query)
 
@@ -107,10 +117,13 @@ async def query_dataset(
     summary="Query a dataset with streaming",
     description="Same as /query but streams agent progress as SSE events",
 )
+@limiter.limit("20/minute")
 async def query_dataset_stream(
+    request: Request,
     dataset_id: UUID,
-    request: QueryRequest,
+    body: QueryRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Stream agent progress as Server-Sent Events.
@@ -126,7 +139,6 @@ async def query_dataset_stream(
     The graph always runs to completion server-side. If the client disconnects,
     retrieve the result later via GET /{query_id}.
     """
-    from app.services.dataset_service import DatasetService
     from app.services.metadata_extractor import MetadataExtractor
     from app.agents.relevance_guard import RelevanceGuard
     from app.agents.context import AnalysisContext
@@ -148,10 +160,12 @@ async def query_dataset_stream(
             relevance_guard = RelevanceGuard()
             error_memory = ErrorMemoryService(data_dir=settings.DATA_DIR)
 
-            dataset = await dataset_service.get_dataset(dataset_id)
+            dataset = await dataset_service.get_dataset(
+                dataset_id, user_id=current_user.id
+            )
 
             await relevance_guard.validate_query(
-                question=request.question,
+                question=body.question,
                 column_names=dataset.columns,
                 column_types=dataset.column_types,
                 sample_data=dataset.sample_data or [],
@@ -166,12 +180,12 @@ async def query_dataset_stream(
                 "summary_statistics": dataset.summary_statistics,
             }
 
-            error_hints = error_memory.get_hints(request.question)
+            error_hints = error_memory.get_hints(body.question)
             context = AnalysisContext(df=df, metadata=metadata)
             graph = build_graph(context)
 
             initial_state: AgentState = {
-                "question": request.question,
+                "question": body.question,
                 "dataset_metadata": metadata,
                 "error_hints": error_hints,
                 "conversation_history": None,
@@ -186,6 +200,7 @@ async def query_dataset_stream(
                 "confidence": None,
                 "follow_up_questions": None,
                 "agent_steps": [],
+                "token_usage": {},
             }
 
             # Stream graph events
@@ -196,7 +211,12 @@ async def query_dataset_stream(
                 kind = event.get("event", "")
                 name = event.get("name", "")
 
-                if kind == "on_chain_start" and name in ("planner", "tool_executor", "synthesizer", "follow_up_gen"):
+                if kind == "on_chain_start" and name in (
+                    "planner",
+                    "tool_executor",
+                    "synthesizer",
+                    "follow_up_gen",
+                ):
                     yield sse("node_start", {"node": name})
 
                 elif kind == "on_chain_end" and name == "planner":
@@ -211,29 +231,40 @@ async def query_dataset_stream(
                     new_idx = output.get("current_step_index", _prev_step_idx)
                     if new_idx > _prev_step_idx and _plan_steps:
                         completed_step = _plan_steps[_prev_step_idx]
-                        yield sse("step_complete", {
-                            "step_number": completed_step.get("step_number"),
-                            "description": completed_step.get("description"),
-                            "tool": completed_step.get("tool_to_use"),
-                            "steps_completed": new_idx,
-                            "total_steps": len(_plan_steps),
-                        })
+                        yield sse(
+                            "step_complete",
+                            {
+                                "step_number": completed_step.get("step_number"),
+                                "description": completed_step.get("description"),
+                                "tool": completed_step.get("tool_to_use"),
+                                "steps_completed": new_idx,
+                                "total_steps": len(_plan_steps),
+                            },
+                        )
                     _prev_step_idx = new_idx
 
                 elif kind == "on_chat_model_stream":
                     pass  # skip token-level streaming for now
 
                 elif kind == "on_tool_start":
-                    yield sse("tool_call", {
-                        "tool": event.get("name", ""),
-                        "input": str(event.get("data", {}).get("input", ""))[:200],
-                    })
+                    yield sse(
+                        "tool_call",
+                        {
+                            "tool": event.get("name", ""),
+                            "input": str(event.get("data", {}).get("input", ""))[:200],
+                        },
+                    )
 
                 elif kind == "on_tool_end":
-                    yield sse("tool_result", {
-                        "tool": event.get("name", ""),
-                        "output": str(event.get("data", {}).get("output", ""))[:300],
-                    })
+                    yield sse(
+                        "tool_result",
+                        {
+                            "tool": event.get("name", ""),
+                            "output": str(event.get("data", {}).get("output", ""))[
+                                :300
+                            ],
+                        },
+                    )
 
                 elif kind == "on_chain_end" and name == "LangGraph":
                     # Final state from the top-level graph
@@ -243,19 +274,32 @@ async def query_dataset_stream(
             # tool runs, so the final step is always one invocation behind and missed.
             for i in range(_prev_step_idx, len(_plan_steps)):
                 step = _plan_steps[i]
-                yield sse("step_complete", {
-                    "step_number": step.get("step_number"),
-                    "description": step.get("description"),
-                    "tool": step.get("tool_to_use"),
-                    "steps_completed": i + 1,
-                    "total_steps": len(_plan_steps),
-                })
+                yield sse(
+                    "step_complete",
+                    {
+                        "step_number": step.get("step_number"),
+                        "description": step.get("description"),
+                        "tool": step.get("tool_to_use"),
+                        "steps_completed": i + 1,
+                        "total_steps": len(_plan_steps),
+                    },
+                )
 
             # Persist result
             execution_time = time.time() - start_time
+            raw_usage = final_state.get("token_usage") or {}
+            logger.info("Final token usage: {}", raw_usage)
+            if raw_usage:
+                prompt_tokens = raw_usage.get("prompt", 0)
+                completion_tokens = raw_usage.get("completion", 0)
+                cost = (prompt_tokens * 2.50 + completion_tokens * 10.00) / 1_000_000
+                token_usage = {**raw_usage, "estimated_cost_usd": round(cost, 6)}
+            else:
+                token_usage = None
+
             query = Query(
                 dataset_id=dataset_id,
-                question=request.question,
+                question=body.question,
                 answer=final_state.get("answer"),
                 visualizations=final_state.get("visualizations") or [],
                 insights=None,
@@ -269,8 +313,9 @@ async def query_dataset_stream(
                 execution_time=execution_time,
                 status="completed",
                 cache_hit="false",
-                session_id=request.session_id,
-                parent_query_id=request.parent_query_id,
+                session_id=body.session_id,
+                parent_query_id=body.parent_query_id,
+                token_usage=token_usage,
             )
             db.add(query)
             await db.commit()
@@ -297,7 +342,9 @@ async def get_query_history(
     skip: int = 0,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    await DatasetService(db).get_dataset(dataset_id, user_id=current_user.id)
     service = QueryService(db)
     queries, total = await service.get_dataset_queries(
         dataset_id=dataset_id, skip=skip, limit=limit
@@ -329,7 +376,8 @@ async def get_query_history(
 async def get_query_result(
     query_id: UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     service = QueryService(db)
-    query = await service.get_query(query_id)
+    query = await service.get_query(query_id, user_id=current_user.id)
     return _build_query_response(query)

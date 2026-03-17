@@ -78,6 +78,9 @@ class QueryResponse(BaseModel):
     cache_hit: bool = Field(..., description="Whether result was from cache")
     status: str = Field(..., description="Query status")
     created_at: datetime = Field(..., description="Query timestamp")
+    token_usage: Optional[Dict[str, Any]] = Field(
+        None, description="Token usage: {prompt, completion, total, estimated_cost_usd}"
+    )
 
     # Conversation threading
     session_id: Optional[UUID] = Field(None, description="Session this query belongs to")

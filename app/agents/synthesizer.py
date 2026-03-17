@@ -9,6 +9,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.state import AgentState
+from app.agents.planner import _extract_usage, _merge_usage
 from app.schemas.agent import AnalysisResult, FollowUpQuestions
 from app.config import settings
 
@@ -34,8 +35,8 @@ async def synthesizer_node(state: AgentState) -> dict[str, Any]:
         model=settings.SYNTHESIZER_MODEL,
         temperature=0.0,
         api_key=SecretStr(settings.OPENAI_API_KEY),
+        stream_usage=True,
     )
-    structured_llm = llm.with_structured_output(AnalysisResult)
 
     # Build context from messages
     tool_transcript = _extract_transcript(state)
@@ -51,22 +52,22 @@ async def synthesizer_node(state: AgentState) -> dict[str, Any]:
         f"Produce a structured final answer."
     )
 
-    result = cast(
-        AnalysisResult,
-        await structured_llm.ainvoke(
-            [
-                SystemMessage(content=_SYNTHESIZER_SYSTEM),
-                HumanMessage(content=prompt),
-            ]
-        ),
+    raw_result = await llm.with_structured_output(
+        AnalysisResult, include_raw=True
+    ).ainvoke(
+        [SystemMessage(content=_SYNTHESIZER_SYSTEM), HumanMessage(content=prompt)]
     )
+    result = cast(AnalysisResult, raw_result["parsed"])
+    usage = _extract_usage(raw_result.get("raw"))
     logger.info("Generated analysis result: {}", result.answer)
 
+    prior = state.get("token_usage") or {}
     return {
         "answer": result.answer,
         "key_findings": result.key_findings,
         "data_quality_notes": result.data_quality_notes,
         "confidence": result.confidence,
+        "token_usage": _merge_usage(prior, usage),
         "agent_steps": state.get("agent_steps", [])
         + [{"node": "synthesizer", "confidence": result.confidence}],
     }
@@ -93,8 +94,8 @@ async def follow_up_node(state: AgentState) -> dict[str, Any]:
         model=settings.SYNTHESIZER_MODEL,
         temperature=0.3,  # slight creativity for question variety
         api_key=SecretStr(settings.OPENAI_API_KEY),
+        stream_usage=True,
     )
-    structured_llm = llm.with_structured_output(FollowUpQuestions)
 
     metadata = state["dataset_metadata"]
     columns = metadata.get("columns", [])
@@ -107,21 +108,24 @@ async def follow_up_node(state: AgentState) -> dict[str, Any]:
         f"Suggest 3–5 follow-up questions."
     )
 
-    result = cast(
-        FollowUpQuestions,
-        await structured_llm.ainvoke(
-            [
-                SystemMessage(content=_FOLLOWUP_SYSTEM),
-                HumanMessage(content=prompt),
-            ]
-        ),
-    )
+    raw_result = await llm.with_structured_output(
+        FollowUpQuestions, include_raw=True
+    ).ainvoke([SystemMessage(content=_FOLLOWUP_SYSTEM), HumanMessage(content=prompt)])
+    result = cast(FollowUpQuestions, raw_result["parsed"])
+    usage = _extract_usage(raw_result.get("raw"))
     logger.info("Generated follow-up questions: {}", result.questions)
 
     follow_ups = [q.model_dump() for q in result.questions]
+    prior = state.get("token_usage") or {}
+
+    logger.info("Token usage after follow-up generation: {}", state.get("token_usage"))
+    logger.info(
+        "Merged token usage with follow-up step: {}", _merge_usage(prior, usage)
+    )
 
     return {
         "follow_up_questions": follow_ups,
+        "token_usage": _merge_usage(prior, usage),
         "agent_steps": state.get("agent_steps", [])
         + [{"node": "follow_up_gen", "questions_generated": len(follow_ups)}],
     }

@@ -6,9 +6,10 @@ from typing import Optional, cast
 
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import HTTPException, status
 from sqlalchemy import select
 
-from app.models.dataset import Query
+from app.models.dataset import Dataset, Query
 from app.services.dataset_service import DatasetService
 from app.services.metadata_extractor import MetadataExtractor
 from app.services.cache_service import cache_service
@@ -139,6 +140,7 @@ class QueryService:
             "confidence": None,
             "follow_up_questions": None,
             "agent_steps": [],
+            "token_usage": {},
         }
 
         try:
@@ -168,6 +170,20 @@ class QueryService:
 
         execution_time = time.time() - start_time
 
+        # Build token usage with cost estimate (gpt-4o pricing as of 2026)
+        logger.info(
+            "[token_usage] final_state value: {}", final_state.get("token_usage")
+        )
+        raw_usage = final_state.get("token_usage") or {}
+        if raw_usage:
+            prompt_tokens = raw_usage.get("prompt", 0)
+            completion_tokens = raw_usage.get("completion", 0)
+            # gpt-4o: $2.50/1M input, $10.00/1M output
+            cost = (prompt_tokens * 2.50 + completion_tokens * 10.00) / 1_000_000
+            token_usage = {**raw_usage, "estimated_cost_usd": round(cost, 6)}
+        else:
+            token_usage = None
+
         # Persist result
         query = Query(
             dataset_id=dataset_id,
@@ -187,6 +203,7 @@ class QueryService:
             cache_hit="false",
             session_id=session_id,
             parent_query_id=parent_query_id,
+            token_usage=token_usage,
         )
 
         self.db.add(query)
@@ -211,13 +228,22 @@ class QueryService:
 
         return query
 
-    async def get_query(self, query_id: UUID) -> Query:
+    async def get_query(self, query_id: UUID, user_id: Optional[UUID] = None) -> Query:
         result = await self.db.execute(select(Query).where(Query.id == query_id))
         query = result.scalar_one_or_none()
         if not query:
             from app.utils.error_handlers import DatasetNotFoundError
 
             raise DatasetNotFoundError(str(query_id))
+        if user_id is not None:
+            dataset = await self.db.execute(
+                select(Dataset).where(Dataset.id == query.dataset_id)
+            )
+            ds = dataset.scalar_one_or_none()
+            if ds is None or ds.user_id != user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+                )
         return query
 
     async def get_dataset_queries(

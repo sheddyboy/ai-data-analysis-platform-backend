@@ -1,6 +1,5 @@
 """Planner node — produces a structured AnalysisPlan before any tools are called."""
 
-import json
 from typing import Any, cast
 
 from pydantic import SecretStr
@@ -55,6 +54,39 @@ def _build_planner_prompt(state: AgentState) -> str:
     )
 
 
+def _extract_usage(raw_msg: Any) -> dict[str, int]:
+    """Pull token counts from a LangChain AIMessage response_metadata or usage_metadata."""
+    if raw_msg is None:
+        return {}
+    # OpenAI places usage in response_metadata["token_usage"] or usage_metadata
+    meta = getattr(raw_msg, "response_metadata", {}) or {}
+    tu = meta.get("token_usage") or {}
+    if tu:
+        return {
+            "prompt": tu.get("prompt_tokens", 0),
+            "completion": tu.get("completion_tokens", 0),
+            "total": tu.get("total_tokens", 0),
+        }
+    # LangChain 0.3+ standardized field
+    um = getattr(raw_msg, "usage_metadata", {}) or {}
+    if um:
+        return {
+            "prompt": um.get("input_tokens", 0),
+            "completion": um.get("output_tokens", 0),
+            "total": um.get("total_tokens", 0),
+        }
+    return {}
+
+
+def _merge_usage(a: dict[str, Any], b: dict[str, int]) -> dict[str, Any]:
+    """Sum token counts from two usage dicts."""
+    return {
+        "prompt": a.get("prompt", 0) + b.get("prompt", 0),
+        "completion": a.get("completion", 0) + b.get("completion", 0),
+        "total": a.get("total", 0) + b.get("total", 0),
+    }
+
+
 async def planner_node(state: AgentState) -> dict[str, Any]:
     """
     Planner node: calls the LLM with structured output to produce an AnalysisPlan.
@@ -64,8 +96,8 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
         model=settings.PLANNER_MODEL,
         temperature=0.0,
         api_key=SecretStr(settings.OPENAI_API_KEY),
+        stream_usage=True,
     )
-    structured_llm = llm.with_structured_output(AnalysisPlan)
 
     prompt = _build_planner_prompt(state)
     logger.info("Sending request to planner:\n{}", prompt)
@@ -74,11 +106,19 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
         HumanMessage(content=prompt),
     ]
 
-    plan = cast(AnalysisPlan, await structured_llm.ainvoke(messages))
+    raw_result = await llm.with_structured_output(
+        AnalysisPlan, include_raw=True
+    ).ainvoke(messages)
+    logger.info("Raw planner output: {}", raw_result.get("raw"))
+    plan = cast(AnalysisPlan, raw_result["parsed"])
+    usage = _extract_usage(raw_result.get("raw"))
     logger.info("Generated analysis plan: {}", plan.steps)
+    logger.info("Token usage for planning step: {}", usage)
 
+    prior = state.get("token_usage") or {}
     return {
         "analysis_plan": plan.model_dump(),
+        "token_usage": _merge_usage(prior, usage),
         "agent_steps": state.get("agent_steps", [])
         + [
             {

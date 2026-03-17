@@ -50,3 +50,6 @@ class AgentState(TypedDict):
 
     # ── Debug / persistence ──────────────────────────────────────────────────
     agent_steps: list[dict[str, Any]]
+
+    # ── V4: token usage (accumulated across all LLM calls) ───────────────────
+    token_usage: dict[str, Any]  # {"prompt": N, "completion": N, "total": N}
