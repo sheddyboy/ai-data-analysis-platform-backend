@@ -1,0 +1,66 @@
+services:
+  - type: web
+    name: ai-data-analysis-platform
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash scripts/start.sh
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: DEBUG
+        value: "False"
+      - key: LOG_LEVEL
+        value: "INFO"
+      - key: UPLOAD_DIR
+        value: "/tmp/uploads"
+      - key: DATA_DIR
+        value: "/tmp/data"
+      - key: ENABLE_CACHE
+        value: "True"
+      - key: CACHE_TTL
+        value: "3600"
+      - key: LLM_TEMPERATURE
+        value: "0.0"
+      - key: LLM_MAX_TOKENS
+        value: "2000"
+      - key: AGENT_VERBOSE
+        value: "False"
+      - key: STREAMING_ENABLED
+        value: "True"
+      - key: SANDBOX_TIMEOUT
+        value: "30"
+      - key: SANDBOX_MAX_OUTPUT
+        value: "3000"
+      - key: JWT_ALGORITHM
+        value: "HS256"
+      - key: JWT_EXPIRE_MINUTES
+        value: "10080"
+      - key: RATE_LIMIT_QUERIES_PER_MINUTE
+        value: "20"
+      - key: FREE_TIER_MONTHLY_TOKEN_LIMIT
+        value: "500000"
+      - key: OPENAI_MODEL
+        value: "gpt-4.1-mini"
+      - key: PLANNER_MODEL
+        value: "gpt-4.1-mini"
+      - key: EXECUTOR_MODEL
+        value: "gpt-4.1-mini"
+      - key: SYNTHESIZER_MODEL
+        value: "gpt-4.1-mini"
+      - key: AGENT_MAX_ITERATIONS_SIMPLE
+        value: "15"
+      - key: AGENT_MAX_ITERATIONS_MODERATE
+        value: "20"
+      - key: AGENT_MAX_ITERATIONS_COMPLEX
+        value: "25"
+      # Secrets — set manually in Render Dashboard after first deploy
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
