@@ -7,6 +7,20 @@
 
 A production-grade backend that lets users interact with their datasets using natural language. Upload a CSV or Excel file, ask questions in plain English, and get back structured answers, auto-generated charts, key findings, and suggested follow-up questions — all powered by a multi-node LangGraph agent.
 
+## What's new in v4
+
+| Feature | v3 | v4 |
+|---------|----|----|
+| Authentication | No auth — all data globally accessible | JWT-based auth (`POST /auth/register`, `POST /auth/login`). Every dataset, session, and query is scoped to its owner |
+| Data isolation | Any caller could read or delete any dataset/session | All list, get, and delete endpoints enforce user ownership — 403 on unauthorized access |
+| Token & cost tracking | No visibility into LLM usage | Prompt/completion tokens and estimated cost accumulated across planner → synthesizer → follow_up nodes, stored on every `Query` as `token_usage: {prompt, completion, total, estimated_cost_usd}` |
+| Rate limiting | Unlimited queries per user | `slowapi` enforces 20 queries/minute per IP on all query endpoints — configurable via `RATE_LIMIT_QUERIES_PER_MINUTE` |
+| Health endpoint | No observability endpoint | `GET /health` — checks PostgreSQL and Redis connectivity, returns per-service status |
+| Admin stats | No stats | `GET /admin/stats` — query count, average execution time, cache hit rate |
+| Test suite | Empty `tests/` directory | Integration tests for auth, dataset upload/scoping, session ownership, and health endpoint using `pytest-asyncio` + SQLite in-memory DB |
+
+**Commits:** _(v4 implementation)_
+
 ## What's new in v3
 
 | Feature | v2 | v3 |
@@ -110,10 +124,32 @@ uvicorn app.main:app --reload
 
 ## API
 
+### Authentication
+
+```bash
+# Register
+curl -X POST http://localhost:8000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "mypassword"}'
+# → {"user_id": "...", "email": "user@example.com", "is_active": true, "created_at": "..."}
+
+# Login
+curl -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "mypassword"}'
+# → {"access_token": "eyJ...", "token_type": "bearer"}
+```
+
+Pass the token in the `Authorization` header for all subsequent requests:
+```bash
+-H "Authorization: Bearer eyJ..."
+```
+
 ### Upload a dataset
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/datasets/upload \
+  -H "Authorization: Bearer eyJ..." \
   -F "file=@sales_data.csv"
 ```
 
@@ -159,7 +195,13 @@ curl -X POST http://localhost:8000/api/v1/queries/datasets/{dataset_id}/query \
   ],
   "visualizations": [{ "type": "bar", "title": "Revenue by Region", "data": {...} }],
   "execution_time": 4.21,
-  "cache_hit": false
+  "cache_hit": false,
+  "token_usage": {
+    "prompt": 3820,
+    "completion": 512,
+    "total": 4332,
+    "estimated_cost_usd": 0.014655
+  }
 }
 ```
 
@@ -261,6 +303,10 @@ If the client disconnects, the graph runs to completion server-side. Retrieve th
 | `ENABLE_CACHE` | Enable Redis query caching | `True` |
 | `UPLOAD_DIR` | Directory for uploaded files | `./uploads` |
 | `MAX_UPLOAD_SIZE` | Max upload size in bytes | `104857600` (100MB) |
+| `JWT_SECRET` | Secret key for signing JWTs | `change-me-in-production` |
+| `JWT_ALGORITHM` | JWT signing algorithm | `HS256` |
+| `JWT_EXPIRE_MINUTES` | JWT token lifetime in minutes | `10080` (7 days) |
+| `RATE_LIMIT_QUERIES_PER_MINUTE` | Max query requests per IP per minute | `20` |
 
 ## Project Structure
 
@@ -288,21 +334,36 @@ app/
 │   ├── cache_service.py
 │   └── error_memory.py     # Learns from agent errors across sessions
 ├── models/
-│   ├── dataset.py          # SQLAlchemy models (Dataset, Query)
-│   └── session.py          # Session model
+│   ├── dataset.py          # SQLAlchemy models (Dataset, Query) — user_id FK + token_usage
+│   ├── session.py          # Session model
+│   └── user.py             # User model
 ├── schemas/
 │   ├── agent.py            # AnalysisPlan, AnalysisResult, FollowUpQuestions
-│   ├── query.py            # API request/response schemas
+│   ├── auth.py             # RegisterRequest, LoginRequest, TokenResponse, UserResponse
+│   ├── query.py            # API request/response schemas (includes token_usage)
 │   └── session.py          # Session request/response schemas
+├── services/
+│   ├── auth_service.py     # JWT creation, password hashing, get_current_user dependency
+│   └── ...
+├── core/
+│   └── limiter.py          # Shared slowapi Limiter instance
 ├── api/v1/endpoints/
+│   ├── auth.py             # /auth/register, /auth/login, /auth/me
 │   ├── datasets.py
-│   ├── queries.py          # /query and /query/stream endpoints
+│   ├── queries.py          # /query and /query/stream endpoints (rate limited)
 │   └── sessions.py         # /sessions CRUD + /sessions/{id}/query
 └── config.py
 alembic/versions/
 ├── 001_initial.py
 ├── 002_v2_query_fields.py  # follow_up_questions, session_id, parent_query_id, ...
-└── 003_v3_sessions.py      # sessions table + session FK on queries
+├── 003_v3_sessions.py      # sessions table + session FK on queries
+├── 004_v4_users.py         # users table + user_id FK on datasets + sessions
+└── 005_v4_token_usage.py   # token_usage JSON column on queries
+tests/
+├── conftest.py             # SQLite in-memory DB fixtures, auth_headers
+├── test_auth.py            # register, login, /me, duplicate email
+├── test_datasets.py        # upload, list (user-scoped), ownership 403, delete
+└── test_sessions.py        # create, list, ownership 403, delete, health
 ```
 
 ## Tech Stack
@@ -318,6 +379,9 @@ alembic/versions/
 | Data processing | Pandas 2.1, NumPy 1.26 |
 | Visualizations | Plotly 5.18 |
 | Migrations | Alembic 1.13 |
+| Auth | python-jose 3.3 + passlib[bcrypt] 1.7 |
+| Rate limiting | slowapi 0.1.9 |
+| Testing | pytest 8.0 + pytest-asyncio 0.23 + httpx 0.26 |
 
 ## Troubleshooting
 
@@ -338,8 +402,13 @@ docker-compose ps
 
 ## Roadmap
 
-- [ ] Multi-dataset cross-join queries
+- [x] JWT authentication + per-user data isolation
+- [x] Token usage + cost tracking per query
+- [x] Rate limiting (slowapi)
+- [x] Health + admin observability endpoints
+- [x] Integration test suite
 - [x] Persistent conversation sessions with full message history
+- [ ] Multi-dataset cross-join queries
 - [ ] Scheduled recurring analyses
 - [ ] Export results to PDF/Excel
 - [ ] WebSocket endpoint for bidirectional follow-up conversation
