@@ -42,6 +42,7 @@ async def create_tables():
     import app.models.user  # noqa: F401
     import app.models.dataset  # noqa: F401
     import app.models.session  # noqa: F401
+    import app.models.user_quota  # noqa: F401
 
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
