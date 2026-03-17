@@ -7,6 +7,18 @@
 
 A production-grade backend that lets users interact with their datasets using natural language. Upload a CSV or Excel file, ask questions in plain English, and get back structured answers, auto-generated charts, key findings, and suggested follow-up questions — all powered by a multi-node LangGraph agent.
 
+## What's new in v5
+
+| Feature | v4 | v5 |
+|---------|----|----|
+| Token quota | No per-user budget — unlimited LLM usage | Monthly token quota per user with Redis fast-path enforcement. Free tier defaults to 500K tokens/month (~27 moderate queries). Configurable via `FREE_TIER_MONTHLY_TOKEN_LIMIT` |
+| Quota enforcement | None | Pre-check before every query (Redis atomic read); post-deduct of actual tokens after execution. Cache hits bypass quota — they consume no new tokens |
+| Quota reset | — | Lazy 30-day rolling reset — period resets automatically on the next request after expiry, no cron job needed |
+| Quota API | None | `GET /api/v1/quota/me` — returns `monthly_limit`, `tokens_used`, `remaining`, `period_end`, `percentage_used` |
+| Quota headers | None | Every query response includes `X-Quota-Remaining`, `X-Quota-Limit`, `X-Quota-Reset` headers |
+| Cost estimate accuracy | Stored `estimated_cost_usd` used gpt-4o pricing ($2.50/$10.00 per 1M) — ~6× too high | Fixed to use gpt-4.1-mini pricing ($0.40/$1.60 per 1M) — accurate cost tracking |
+| Quota tests | None | 6 integration tests covering quota creation, exhaustion, lazy reset, deduction, and the `/quota/me` endpoint |
+
 ## What's new in v4
 
 | Feature | v3 | v4 |
@@ -18,8 +30,6 @@ A production-grade backend that lets users interact with their datasets using na
 | Health endpoint | No observability endpoint | `GET /health` — checks PostgreSQL and Redis connectivity, returns per-service status |
 | Admin stats | No stats | `GET /admin/stats` — query count, average execution time, cache hit rate |
 | Test suite | Empty `tests/` directory | Integration tests for auth, dataset upload/scoping, session ownership, and health endpoint using `pytest-asyncio` + SQLite in-memory DB |
-
-**Commits:** _(v4 implementation)_
 
 ## What's new in v3
 
@@ -54,6 +64,9 @@ A production-grade backend that lets users interact with their datasets using na
 POST /query
     │
     ▼
+QuotaService            ← pre-check: rejects if monthly token budget exhausted
+    │
+    ▼
 RelevanceGuard          ← validates question relevance (structured output)
     │
     ▼
@@ -73,6 +86,9 @@ RelevanceGuard          ← validates question relevance (structured output)
 └─────────────────────────────────────────────────────────┘
     │
     ▼
+QuotaService            ← post-deduct: actual tokens deducted from Redis + DB
+    │
+    ▼
 PostgreSQL + Redis cache
 ```
 
@@ -80,11 +96,11 @@ PostgreSQL + Redis cache
 
 | Node | Model | Role |
 |------|-------|------|
-| **planner** | gpt-4o | Reads dataset schema + question (plus any prior error hints or parent query context), produces a structured `AnalysisPlan` (ordered steps, complexity, needs_visualization). No tool access — pure reasoning. |
-| **tool_executor** | gpt-4o-mini | Drives the tool-calling loop step-by-step. Each turn injects a step-specific `HumanMessage` and enforces the correct tool via OpenAI `tool_choice` — the LLM physically cannot call a different tool. `load_dataset` is always forced first as a pre-step, then each plan step in order, and finally `finish_analysis` once all steps succeed. On tool errors the step index is not advanced, triggering a retry of the same step. |
+| **planner** | gpt-4.1-mini | Reads dataset schema + question (plus any prior error hints or parent query context), produces a structured `AnalysisPlan` (ordered steps, complexity, needs_visualization). No tool access — pure reasoning. |
+| **tool_executor** | gpt-4.1-mini | Drives the tool-calling loop step-by-step. Each turn injects a step-specific `HumanMessage` and enforces the correct tool via OpenAI `tool_choice` — the LLM physically cannot call a different tool. `load_dataset` is always forced first as a pre-step, then each plan step in order, and finally `finish_analysis` once all steps succeed. On tool errors the step index is not advanced, triggering a retry of the same step. |
 | **tools** | — | LangGraph `ToolNode` dispatches tool calls and returns `ToolMessage` results. |
-| **synthesizer** | gpt-4o | Reads the full tool transcript **and conversation history** (if in a session) and produces a structured `AnalysisResult` (answer, key_findings, confidence). Receiving prior context is what enables correct answers to follow-up questions like "list their names". |
-| **follow_up_gen** | gpt-4o | Generates 3–5 `FollowUpQuestion` objects with rationale for each. |
+| **synthesizer** | gpt-4.1-mini | Reads the full tool transcript **and conversation history** (if in a session) and produces a structured `AnalysisResult` (answer, key_findings, confidence). Receiving prior context is what enables correct answers to follow-up questions like "list their names". |
+| **follow_up_gen** | gpt-4.1-mini | Generates 3–5 `FollowUpQuestion` objects with rationale for each. |
 
 #### tool_executor step lifecycle
 
@@ -170,6 +186,13 @@ curl -X POST http://localhost:8000/api/v1/queries/datasets/{dataset_id}/query \
   -d '{"question": "Which region has the highest revenue?"}'
 ```
 
+Response headers include quota status:
+```
+X-Quota-Remaining: 498234
+X-Quota-Limit: 500000
+X-Quota-Reset: 2026-04-16T10:23:00+00:00
+```
+
 ```json
 {
   "query_id": "7c9e6679-...",
@@ -200,10 +223,46 @@ curl -X POST http://localhost:8000/api/v1/queries/datasets/{dataset_id}/query \
     "prompt": 3820,
     "completion": 512,
     "total": 4332,
-    "estimated_cost_usd": 0.014655
+    "estimated_cost_usd": 0.002344
   }
 }
 ```
+
+### Token quota
+
+```bash
+# Check your current quota
+curl http://localhost:8000/api/v1/quota/me \
+  -H "Authorization: Bearer eyJ..."
+```
+
+```json
+{
+  "monthly_limit": 500000,
+  "tokens_used": 1766,
+  "remaining": 498234,
+  "period_end": "2026-04-16T10:23:00+00:00",
+  "percentage_used": 0.35
+}
+```
+
+When the quota is exhausted, query endpoints return `429 Too Many Requests`:
+
+```json
+{
+  "error": "quota_exceeded",
+  "message": "Monthly token quota of 500,000 tokens exceeded",
+  "tokens_used": 500000,
+  "monthly_limit": 500000,
+  "resets_at": "2026-04-16T10:23:00+00:00"
+}
+```
+
+**Quota behaviour:**
+- Quota rows are created lazily on first use — no setup required after registration
+- Cache hits do not consume quota (no new tokens are spent)
+- The quota period resets automatically 30 days after the period start, on the next request after expiry
+- A small overage (~1 query) is possible if two requests arrive simultaneously and both pass the pre-check
 
 ### Sessions (multi-turn conversation)
 
@@ -290,12 +349,12 @@ If the client disconnects, the graph runs to completion server-side. Retrieve th
 | `DATABASE_URL` | PostgreSQL async connection URL | Required |
 | `REDIS_URL` | Redis connection URL | Required |
 | `OPENAI_API_KEY` | OpenAI API key | Required |
-| `OPENAI_MODEL` | Fallback model (relevance guard) | `gpt-4o-mini` |
-| `PLANNER_MODEL` | Model for planner node | `gpt-4o` |
-| `EXECUTOR_MODEL` | Model for tool executor loop | `gpt-4o-mini` |
-| `SYNTHESIZER_MODEL` | Model for synthesizer + follow-ups | `gpt-4o` |
-| `AGENT_MAX_ITERATIONS_SIMPLE` | Max tool iterations for simple queries | `8` |
-| `AGENT_MAX_ITERATIONS_MODERATE` | Max tool iterations for moderate queries | `15` |
+| `OPENAI_MODEL` | Fallback model (relevance guard) | `gpt-4.1-mini` |
+| `PLANNER_MODEL` | Model for planner node | `gpt-4.1-mini` |
+| `EXECUTOR_MODEL` | Model for tool executor loop | `gpt-4.1-mini` |
+| `SYNTHESIZER_MODEL` | Model for synthesizer + follow-ups | `gpt-4.1-mini` |
+| `AGENT_MAX_ITERATIONS_SIMPLE` | Max tool iterations for simple queries | `15` |
+| `AGENT_MAX_ITERATIONS_MODERATE` | Max tool iterations for moderate queries | `20` |
 | `AGENT_MAX_ITERATIONS_COMPLEX` | Max tool iterations for complex queries | `25` |
 | `SANDBOX_TIMEOUT` | Max seconds for Python sandbox execution | `30` |
 | `SANDBOX_MAX_OUTPUT` | Max chars returned from sandbox | `3000` |
@@ -307,6 +366,7 @@ If the client disconnects, the graph runs to completion server-side. Retrieve th
 | `JWT_ALGORITHM` | JWT signing algorithm | `HS256` |
 | `JWT_EXPIRE_MINUTES` | JWT token lifetime in minutes | `10080` (7 days) |
 | `RATE_LIMIT_QUERIES_PER_MINUTE` | Max query requests per IP per minute | `20` |
+| `FREE_TIER_MONTHLY_TOKEN_LIMIT` | Monthly token budget per user | `500000` |
 
 ## Project Structure
 
@@ -325,32 +385,31 @@ app/
 │   └── visualization_tools.py  # build_create_visualization_tool(context)
 ├── schemas/
 │   ├── agent.py            # AnalysisPlan, AnalysisResult, FollowUpQuestions
-│   └── query.py            # API request/response schemas
-├── services/
-│   ├── query_service.py    # Orchestrates graph execution + persistence
-│   ├── session_service.py  # Session CRUD + conversation history builder
-│   ├── dataset_service.py
-│   ├── metadata_extractor.py
-│   ├── cache_service.py
-│   └── error_memory.py     # Learns from agent errors across sessions
-├── models/
-│   ├── dataset.py          # SQLAlchemy models (Dataset, Query) — user_id FK + token_usage
-│   ├── session.py          # Session model
-│   └── user.py             # User model
-├── schemas/
-│   ├── agent.py            # AnalysisPlan, AnalysisResult, FollowUpQuestions
 │   ├── auth.py             # RegisterRequest, LoginRequest, TokenResponse, UserResponse
 │   ├── query.py            # API request/response schemas (includes token_usage)
+│   ├── quota.py            # QuotaInfoResponse
 │   └── session.py          # Session request/response schemas
 ├── services/
 │   ├── auth_service.py     # JWT creation, password hashing, get_current_user dependency
-│   └── ...
+│   ├── cache_service.py    # Redis singleton (query caching)
+│   ├── dataset_service.py
+│   ├── error_memory.py     # Learns from agent errors across sessions
+│   ├── metadata_extractor.py
+│   ├── query_service.py    # Orchestrates graph execution + persistence + quota hooks
+│   ├── quota_service.py    # Monthly token quota — Redis fast-path check + DB deduction
+│   └── session_service.py  # Session CRUD + conversation history builder
+├── models/
+│   ├── dataset.py          # SQLAlchemy models (Dataset, Query) — user_id FK + token_usage
+│   ├── session.py          # Session model
+│   ├── user.py             # User model
+│   └── user_quota.py       # UserQuota model — monthly token budget per user
 ├── core/
 │   └── limiter.py          # Shared slowapi Limiter instance
 ├── api/v1/endpoints/
 │   ├── auth.py             # /auth/register, /auth/login, /auth/me
 │   ├── datasets.py
-│   ├── queries.py          # /query and /query/stream endpoints (rate limited)
+│   ├── queries.py          # /query and /query/stream (rate limited, quota enforced)
+│   ├── quota.py            # /quota/me
 │   └── sessions.py         # /sessions CRUD + /sessions/{id}/query
 └── config.py
 alembic/versions/
@@ -358,11 +417,13 @@ alembic/versions/
 ├── 002_v2_query_fields.py  # follow_up_questions, session_id, parent_query_id, ...
 ├── 003_v3_sessions.py      # sessions table + session FK on queries
 ├── 004_v4_users.py         # users table + user_id FK on datasets + sessions
-└── 005_v4_token_usage.py   # token_usage JSON column on queries
+├── 005_v4_token_usage.py   # token_usage JSON column on queries
+└── 006_v5_user_quotas.py   # user_quotas table
 tests/
 ├── conftest.py             # SQLite in-memory DB fixtures, auth_headers
 ├── test_auth.py            # register, login, /me, duplicate email
 ├── test_datasets.py        # upload, list (user-scoped), ownership 403, delete
+├── test_quota.py           # quota creation, exhaustion, lazy reset, deduction
 └── test_sessions.py        # create, list, ownership 403, delete, health
 ```
 
@@ -373,9 +434,9 @@ tests/
 | Web framework | FastAPI 0.109 (async) |
 | Agent orchestration | LangGraph 0.2 |
 | LLM integration | LangChain 0.3 + langchain-openai 0.2 |
-| LLM provider | OpenAI (gpt-4o / gpt-4o-mini) |
+| LLM provider | OpenAI (gpt-4.1-mini) |
 | Database | PostgreSQL 15 + SQLAlchemy 2.0 async |
-| Cache | Redis 7 |
+| Cache / quota store | Redis 7 |
 | Data processing | Pandas 2.1, NumPy 1.26 |
 | Visualizations | Plotly 5.18 |
 | Migrations | Alembic 1.13 |
@@ -408,6 +469,7 @@ docker-compose ps
 - [x] Health + admin observability endpoints
 - [x] Integration test suite
 - [x] Persistent conversation sessions with full message history
+- [x] Monthly token quota per user (Redis fast-path)
 - [ ] Multi-dataset cross-join queries
 - [ ] Scheduled recurring analyses
 - [ ] Export results to PDF/Excel
