@@ -237,6 +237,7 @@ async def session_query(
     query = await query_service.execute_query(
         dataset_id=session.dataset_id,
         question=request.question,
+        current_user=current_user,
         session_id=session_id,
         parent_query_id=parent_query_id,
         conversation_history=conversation_history,
@@ -271,8 +272,12 @@ async def session_query_stream(
     from app.agents.graph import build_graph
     from app.agents.state import AgentState
     from app.services.error_memory import ErrorMemoryService
+    from app.services.quota_service import QuotaService
     from app.config import settings
     import time
+
+    # Quota pre-check before starting the SSE stream (allows proper HTTP 429)
+    await QuotaService(db).check_quota(current_user.id)
 
     async def event_stream() -> AsyncGenerator[str, None]:
         def sse(event: str, data: dict) -> str:
@@ -419,6 +424,16 @@ async def session_query_stream(
 
             # Persist result
             execution_time = time.time() - start_time
+            raw_usage = final_state.get("token_usage") or {}
+            if raw_usage:
+                prompt_tokens = raw_usage.get("prompt", 0)
+                completion_tokens = raw_usage.get("completion", 0)
+                # gpt-4.1-mini: $0.40/1M input, $1.60/1M output
+                cost = (prompt_tokens * 0.40 + completion_tokens * 1.60) / 1_000_000
+                token_usage = {**raw_usage, "estimated_cost_usd": round(cost, 6)}
+            else:
+                token_usage = None
+
             query = Query(
                 dataset_id=session.dataset_id,
                 question=request.question,
@@ -437,11 +452,17 @@ async def session_query_stream(
                 cache_hit="false",
                 session_id=session_id,
                 parent_query_id=parent_query_id,
-                token_usage=final_state.get("token_usage"),
+                token_usage=token_usage,
             )
             db.add(query)
             await db.commit()
             await db.refresh(query)
+
+            # Deduct actual tokens from quota
+            if token_usage:
+                total_tokens = token_usage.get("total", 0)
+                if total_tokens > 0:
+                    await QuotaService(db).deduct_tokens(current_user.id, total_tokens)
 
             # Auto-title session from the first question
             if not prior_queries:

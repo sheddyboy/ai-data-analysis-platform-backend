@@ -3,7 +3,7 @@
 import json
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
@@ -87,6 +87,7 @@ async def query_dataset(
     request: Request,
     dataset_id: UUID,
     body: QueryRequest,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -101,15 +102,26 @@ async def query_dataset(
 
     Pass `parent_query_id` to continue a previous conversation with full context.
     """
+    from app.services.quota_service import QuotaService
+
     await DatasetService(db).get_dataset(dataset_id, user_id=current_user.id)
     service = QueryService(db)
     query = await service.execute_query(
         dataset_id=dataset_id,
         question=body.question,
+        current_user=current_user,
         session_id=body.session_id,
         parent_query_id=body.parent_query_id,
     )
-    return _build_query_response(query)
+    result = _build_query_response(query)
+
+    # Add quota headers
+    quota_info = await QuotaService(db).get_quota_info(current_user.id)
+    response.headers["X-Quota-Remaining"] = str(quota_info.remaining)
+    response.headers["X-Quota-Limit"] = str(quota_info.monthly_limit)
+    response.headers["X-Quota-Reset"] = quota_info.period_end.isoformat()
+
+    return result
 
 
 @router.post(
@@ -145,8 +157,12 @@ async def query_dataset_stream(
     from app.agents.graph import build_graph
     from app.agents.state import AgentState
     from app.services.error_memory import ErrorMemoryService
+    from app.services.quota_service import QuotaService
     from app.config import settings
     import time
+
+    # Quota pre-check before starting the SSE stream (allows proper HTTP 429)
+    await QuotaService(db).check_quota(current_user.id)
 
     async def event_stream() -> AsyncGenerator[str, None]:
         def sse(event: str, data: dict) -> str:
@@ -292,7 +308,8 @@ async def query_dataset_stream(
             if raw_usage:
                 prompt_tokens = raw_usage.get("prompt", 0)
                 completion_tokens = raw_usage.get("completion", 0)
-                cost = (prompt_tokens * 2.50 + completion_tokens * 10.00) / 1_000_000
+                # gpt-4.1-mini: $0.40/1M input, $1.60/1M output
+                cost = (prompt_tokens * 0.40 + completion_tokens * 1.60) / 1_000_000
                 token_usage = {**raw_usage, "estimated_cost_usd": round(cost, 6)}
             else:
                 token_usage = None
@@ -320,6 +337,12 @@ async def query_dataset_stream(
             db.add(query)
             await db.commit()
             await db.refresh(query)
+
+            # Deduct actual tokens from quota
+            if token_usage:
+                total_tokens = token_usage.get("total", 0)
+                if total_tokens > 0:
+                    await QuotaService(db).deduct_tokens(current_user.id, total_tokens)
 
             # Emit complete event with full response
             response = _build_query_response(query)

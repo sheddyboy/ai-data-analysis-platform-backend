@@ -10,7 +10,9 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 
 from app.models.dataset import Dataset, Query
+from app.models.user import User
 from app.services.dataset_service import DatasetService
+from app.services.quota_service import QuotaService
 from app.services.metadata_extractor import MetadataExtractor
 from app.services.cache_service import cache_service
 from app.services.error_memory import ErrorMemoryService
@@ -35,6 +37,7 @@ class QueryService:
         self,
         dataset_id: UUID,
         question: str,
+        current_user: User,
         session_id: Optional[UUID] = None,
         parent_query_id: Optional[UUID] = None,
         conversation_history: Optional[str] = None,
@@ -87,6 +90,10 @@ class QueryService:
                 await self.db.commit()
                 await self.db.refresh(query)
                 return query
+
+        # Quota pre-check (before expensive LangGraph execution)
+        quota_service = QuotaService(self.db)
+        await quota_service.check_quota(current_user.id)
 
         # Validate query relevance
         await self.relevance_guard.validate_query(
@@ -170,7 +177,7 @@ class QueryService:
 
         execution_time = time.time() - start_time
 
-        # Build token usage with cost estimate (gpt-4o pricing as of 2026)
+        # Build token usage with cost estimate (gpt-4.1-mini pricing)
         logger.info(
             "[token_usage] final_state value: {}", final_state.get("token_usage")
         )
@@ -178,8 +185,8 @@ class QueryService:
         if raw_usage:
             prompt_tokens = raw_usage.get("prompt", 0)
             completion_tokens = raw_usage.get("completion", 0)
-            # gpt-4o: $2.50/1M input, $10.00/1M output
-            cost = (prompt_tokens * 2.50 + completion_tokens * 10.00) / 1_000_000
+            # gpt-4.1-mini: $0.40/1M input, $1.60/1M output
+            cost = (prompt_tokens * 0.40 + completion_tokens * 1.60) / 1_000_000
             token_usage = {**raw_usage, "estimated_cost_usd": round(cost, 6)}
         else:
             token_usage = None
@@ -209,6 +216,12 @@ class QueryService:
         self.db.add(query)
         await self.db.commit()
         await self.db.refresh(query)
+
+        # Deduct actual tokens from quota
+        if token_usage:
+            total_tokens = token_usage.get("total", 0)
+            if total_tokens > 0:
+                await quota_service.deduct_tokens(current_user.id, total_tokens)
 
         # Cache (only non-follow-up queries)
         if not parent_query_id:
