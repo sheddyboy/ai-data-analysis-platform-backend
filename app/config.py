@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # V4: Rate limiting
     RATE_LIMIT_QUERIES_PER_MINUTE: Annotated[int, Field(gt=0)] = 20
 
+    # V5: Monthly token quota
+    FREE_TIER_MONTHLY_TOKEN_LIMIT: Annotated[int, Field(gt=0)] = 500_000
+
     # Application Settings
     APP_NAME: Annotated[str, Field()] = "AI Data Analysis Platform"
     APP_VERSION: Annotated[str, Field()] = "4.0.0"

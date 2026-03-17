@@ -32,9 +32,20 @@ class FileProcessingError(Exception):
 
 class AgentExecutionError(Exception):
     """Raised when agent execution fails."""
-    
+
     def __init__(self, message: str = "Agent execution failed"):
         self.message = message
+        super().__init__(self.message)
+
+
+class QuotaExceededError(Exception):
+    """Raised when a user has exhausted their monthly token quota."""
+
+    def __init__(self, tokens_used: int, monthly_limit: int, resets_at: str):
+        self.tokens_used = tokens_used
+        self.monthly_limit = monthly_limit
+        self.resets_at = resets_at
+        self.message = f"Monthly token quota of {monthly_limit:,} tokens exceeded"
         super().__init__(self.message)
 
 
@@ -97,10 +108,28 @@ async def agent_execution_exception_handler(
     )
 
 
+async def quota_exceeded_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """Handle quota exceeded errors."""
+    assert isinstance(exc, QuotaExceededError)
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={
+            "error": "quota_exceeded",
+            "message": exc.message,
+            "tokens_used": exc.tokens_used,
+            "monthly_limit": exc.monthly_limit,
+            "resets_at": exc.resets_at,
+        },
+    )
+
+
 def setup_exception_handlers(app: FastAPI) -> None:
     """Register custom exception handlers with the FastAPI app."""
-    
+
     app.add_exception_handler(IrrelevantQuestionError, irrelevant_question_exception_handler)
     app.add_exception_handler(DatasetNotFoundError, dataset_not_found_exception_handler)
     app.add_exception_handler(FileProcessingError, file_processing_exception_handler)
     app.add_exception_handler(AgentExecutionError, agent_execution_exception_handler)
+    app.add_exception_handler(QuotaExceededError, quota_exceeded_exception_handler)

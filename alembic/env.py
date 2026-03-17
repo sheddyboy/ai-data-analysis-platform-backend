@@ -9,7 +9,7 @@ from alembic import context
 
 # Import your models here (must be imported for autogenerate to detect them)
 from app.database import Base
-from app.models import Dataset, Query, Session  # noqa: F401
+from app.models import Dataset, Query, Session, UserQuota  # noqa: F401
 from app.config import settings
 
 # this is the Alembic Config object
