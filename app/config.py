@@ -20,9 +20,19 @@ class Settings(BaseSettings):
         "gpt-4.1-mini"
     )
 
+    # V4: Auth
+    JWT_SECRET: Annotated[str, Field(description="Secret key for signing JWTs")] = (
+        "change-me-in-production"
+    )
+    JWT_ALGORITHM: Annotated[str, Field()] = "HS256"
+    JWT_EXPIRE_MINUTES: Annotated[int, Field(gt=0)] = 60 * 24 * 7  # 7 days
+
+    # V4: Rate limiting
+    RATE_LIMIT_QUERIES_PER_MINUTE: Annotated[int, Field(gt=0)] = 20
+
     # Application Settings
     APP_NAME: Annotated[str, Field()] = "AI Data Analysis Platform"
-    APP_VERSION: Annotated[str, Field()] = "2.0.0"
+    APP_VERSION: Annotated[str, Field()] = "4.0.0"
     DEBUG: Annotated[bool, Field()] = True
     LOG_LEVEL: Annotated[str, Field(description="Logging level")] = "INFO"
     UPLOAD_DIR: Annotated[str, Field()] = "./uploads"

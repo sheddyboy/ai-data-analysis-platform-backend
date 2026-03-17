@@ -10,6 +10,8 @@ from uuid import UUID
 
 from app.database import get_db
 from app.models.dataset import Query
+from app.models.user import User
+from app.services.auth_service import get_current_user
 from app.services.session_service import SessionService
 from app.services.query_service import QueryService
 from app.schemas.session import (
@@ -81,6 +83,7 @@ def _build_query_response(query: Query) -> QueryResponse:
         created_at=query.created_at,
         session_id=query.session_id,
         parent_query_id=query.parent_query_id,
+        token_usage=query.token_usage,
     )
 
 
@@ -97,10 +100,13 @@ async def create_session(
     dataset_id: UUID,
     request: SessionCreateRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Create a new chat session tied to a dataset."""
     service = SessionService(db)
-    session = await service.create_session(dataset_id=dataset_id, title=request.title)
+    session = await service.create_session(
+        dataset_id=dataset_id, title=request.title, user_id=current_user.id
+    )
     return _session_response(session, message_count=0)
 
 
@@ -114,9 +120,14 @@ async def list_sessions(
     skip: int = 0,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """List all chat sessions for a dataset, most recent first."""
     service = SessionService(db)
+    # Verify dataset ownership before listing sessions
+    from app.services.dataset_service import DatasetService
+
+    await DatasetService(db).get_dataset(dataset_id, user_id=current_user.id)
     sessions, total = await service.list_sessions(
         dataset_id=dataset_id, skip=skip, limit=limit
     )
@@ -137,10 +148,11 @@ async def list_sessions(
 async def get_session(
     session_id: UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Retrieve a session and its full message history in chronological order."""
     service = SessionService(db)
-    session = await service.get_session(session_id)
+    session = await service.get_session(session_id, user_id=current_user.id)
     queries = await service.get_session_queries(session_id)
 
     messages = [
@@ -174,9 +186,11 @@ async def get_session(
 async def delete_session(
     session_id: UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Delete a session. Existing queries are preserved but unlinked (session_id set to NULL)."""
     service = SessionService(db)
+    await service.get_session(session_id, user_id=current_user.id)  # ownership check
     await service.delete_session(session_id)
 
 
@@ -193,6 +207,7 @@ async def session_query(
     session_id: UUID,
     request: SessionQueryRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Execute a query within a chat session.
@@ -206,7 +221,7 @@ async def session_query(
     session_service = SessionService(db)
     query_service = QueryService(db)
 
-    session = await session_service.get_session(session_id)
+    session = await session_service.get_session(session_id, user_id=current_user.id)
     prior_queries = await session_service.get_session_queries(session_id)
 
     # Build multi-turn context for the planner
@@ -243,6 +258,7 @@ async def session_query_stream(
     session_id: UUID,
     request: SessionQueryRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Stream agent progress as Server-Sent Events within a chat session.
@@ -266,7 +282,9 @@ async def session_query_stream(
 
         try:
             session_service = SessionService(db)
-            session = await session_service.get_session(session_id)
+            session = await session_service.get_session(
+                session_id, user_id=current_user.id
+            )
             prior_queries = await session_service.get_session_queries(session_id)
 
             conversation_history = SessionService.build_conversation_context(
@@ -319,6 +337,7 @@ async def session_query_stream(
                 "confidence": None,
                 "follow_up_questions": None,
                 "agent_steps": [],
+                "token_usage": {},
             }
 
             final_state: AgentState = initial_state
@@ -348,13 +367,16 @@ async def session_query_stream(
                     new_idx = output.get("current_step_index", _prev_step_idx)
                     if new_idx > _prev_step_idx and _plan_steps:
                         completed_step = _plan_steps[_prev_step_idx]
-                        yield sse("step_complete", {
-                            "step_number": completed_step.get("step_number"),
-                            "description": completed_step.get("description"),
-                            "tool": completed_step.get("tool_to_use"),
-                            "steps_completed": new_idx,
-                            "total_steps": len(_plan_steps),
-                        })
+                        yield sse(
+                            "step_complete",
+                            {
+                                "step_number": completed_step.get("step_number"),
+                                "description": completed_step.get("description"),
+                                "tool": completed_step.get("tool_to_use"),
+                                "steps_completed": new_idx,
+                                "total_steps": len(_plan_steps),
+                            },
+                        )
                     _prev_step_idx = new_idx
 
                 elif kind == "on_tool_start":
@@ -384,13 +406,16 @@ async def session_query_stream(
             # tool runs, so the final step is always one invocation behind and missed.
             for i in range(_prev_step_idx, len(_plan_steps)):
                 step = _plan_steps[i]
-                yield sse("step_complete", {
-                    "step_number": step.get("step_number"),
-                    "description": step.get("description"),
-                    "tool": step.get("tool_to_use"),
-                    "steps_completed": i + 1,
-                    "total_steps": len(_plan_steps),
-                })
+                yield sse(
+                    "step_complete",
+                    {
+                        "step_number": step.get("step_number"),
+                        "description": step.get("description"),
+                        "tool": step.get("tool_to_use"),
+                        "steps_completed": i + 1,
+                        "total_steps": len(_plan_steps),
+                    },
+                )
 
             # Persist result
             execution_time = time.time() - start_time
@@ -412,6 +437,7 @@ async def session_query_stream(
                 cache_hit="false",
                 session_id=session_id,
                 parent_query_id=parent_query_id,
+                token_usage=final_state.get("token_usage"),
             )
             db.add(query)
             await db.commit()

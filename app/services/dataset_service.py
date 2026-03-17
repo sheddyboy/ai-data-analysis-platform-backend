@@ -2,7 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile, status
 from typing import List, Optional
 from uuid import UUID
 
@@ -25,7 +25,7 @@ class DatasetService:
         self.db = db
         self.metadata_extractor = MetadataExtractor()
     
-    async def upload_dataset(self, upload_file: UploadFile) -> Dataset:
+    async def upload_dataset(self, upload_file: UploadFile, user_id: Optional[UUID] = None) -> Dataset:
         """
         Upload and process a new dataset.
         
@@ -58,7 +58,8 @@ class DatasetService:
                 column_types=metadata['column_types'],
                 summary_statistics=metadata['summary_statistics'],
                 sample_data=metadata['sample_data'],
-                status="ready"
+                status="ready",
+                user_id=user_id,
             )
             
             self.db.add(dataset)
@@ -71,27 +72,32 @@ class DatasetService:
             await self.db.rollback()
             raise FileProcessingError(f"Failed to process dataset: {str(e)}")
     
-    async def get_dataset(self, dataset_id: UUID) -> Dataset:
+    async def get_dataset(self, dataset_id: UUID, user_id: Optional[UUID] = None) -> Dataset:
         """
         Get a dataset by ID.
-        
+
         Args:
             dataset_id: Dataset UUID
-            
+            user_id: If provided, verify the dataset belongs to this user.
+
         Returns:
             Dataset model
-            
+
         Raises:
             DatasetNotFoundError: If dataset not found
+            HTTPException 403: If user_id provided and dataset belongs to someone else
         """
         result = await self.db.execute(
             select(Dataset).where(Dataset.id == dataset_id)
         )
         dataset = result.scalar_one_or_none()
-        
+
         if not dataset:
             raise DatasetNotFoundError(str(dataset_id))
-        
+
+        if user_id is not None and dataset.user_id != user_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
         return dataset
     
     async def get_dataset_metadata(self, dataset_id: UUID) -> Dataset:
@@ -110,33 +116,36 @@ class DatasetService:
         return await self.get_dataset(dataset_id)
     
     async def list_datasets(
-        self, 
-        skip: int = 0, 
-        limit: int = 100
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        user_id: Optional[UUID] = None,
     ) -> tuple[List[Dataset], int]:
         """
-        List all datasets with pagination.
-        
+        List datasets with pagination, optionally filtered to a specific user.
+
         Args:
             skip: Number of records to skip
             limit: Maximum number of records to return
-            
+            user_id: If provided, only return datasets owned by this user
+
         Returns:
             Tuple of (datasets list, total count)
         """
-        # Get total count
-        count_result = await self.db.execute(select(func.count(Dataset.id)))
+        base = select(Dataset)
+        count_base = select(func.count(Dataset.id))
+        if user_id is not None:
+            base = base.where(Dataset.user_id == user_id)
+            count_base = count_base.where(Dataset.user_id == user_id)
+
+        count_result = await self.db.execute(count_base)
         total = count_result.scalar_one()
-        
-        # Get datasets
+
         result = await self.db.execute(
-            select(Dataset)
-            .order_by(Dataset.created_at.desc())
-            .offset(skip)
-            .limit(limit)
+            base.order_by(Dataset.created_at.desc()).offset(skip).limit(limit)
         )
         datasets = result.scalars().all()
-        
+
         return list(datasets), total
     
     async def delete_dataset(self, dataset_id: UUID) -> bool:

@@ -37,6 +37,14 @@ class Dataset(Base):
         JSON, nullable=True
     )  # First 5 rows
 
+    # V4: owner
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
     # Status
     status: Mapped[str] = mapped_column(
         String(50), default="ready"
@@ -54,12 +62,15 @@ class Dataset(Base):
     )
 
     # Relationships
+    owner: Mapped[Optional["User"]] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        "User", back_populates="datasets"
+    )
     queries: Mapped[list["Query"]] = relationship(
         "Query", back_populates="dataset", cascade="all, delete-orphan"
     )
-    sessions: Mapped[list["Session"]] = relationship(
+    sessions: Mapped[list["Session"]] = relationship(  # type: ignore[name-defined]  # noqa: F821
         "Session", back_populates="dataset", cascade="all, delete-orphan"
-    )  # type: ignore[name-defined]
+    )
 
     def __repr__(self):
         return f"<Dataset(id={self.id}, filename={self.filename})>"
@@ -118,6 +129,11 @@ class Query(Base):
         JSON, nullable=True
     )
 
+    # V4: token usage tracking
+    token_usage: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON, nullable=True
+    )  # {"prompt": N, "completion": N, "total": N, "estimated_cost_usd": N}
+
     # V3: conversation threading via Session
     session_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
@@ -141,7 +157,7 @@ class Query(Base):
 
     # Relationships
     dataset: Mapped["Dataset"] = relationship("Dataset", back_populates="queries")
-    session: Mapped[Optional["Session"]] = relationship(
+    session: Mapped[Optional["Session"]] = relationship(  # type: ignore[name-defined] # noqa: F821
         "Session", back_populates="queries"
     )  # type: ignore[name-defined]
     parent_query: Mapped[Optional["Query"]] = relationship(

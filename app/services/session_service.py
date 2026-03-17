@@ -3,6 +3,7 @@
 from uuid import UUID
 from typing import Optional
 
+from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -18,27 +19,32 @@ class SessionService:
         self.db = db
         self.dataset_service = DatasetService(db)
 
-    async def create_session(self, dataset_id: UUID, title: Optional[str] = None) -> Session:
+    async def create_session(
+        self, dataset_id: UUID, title: Optional[str] = None, user_id: Optional[UUID] = None
+    ) -> Session:
         """Create a new session tied to a dataset."""
-        # Verify dataset exists
-        await self.dataset_service.get_dataset(dataset_id)
+        # Verify dataset exists and user owns it
+        await self.dataset_service.get_dataset(dataset_id, user_id=user_id)
 
         session = Session(
             dataset_id=dataset_id,
             title=title or "New session",
+            user_id=user_id,
         )
         self.db.add(session)
         await self.db.commit()
         await self.db.refresh(session)
         return session
 
-    async def get_session(self, session_id: UUID) -> Session:
-        """Fetch a session by ID, raising 404 if not found."""
+    async def get_session(self, session_id: UUID, user_id: Optional[UUID] = None) -> Session:
+        """Fetch a session by ID, raising 404 if not found or 403 if not owned by user_id."""
         result = await self.db.execute(select(Session).where(Session.id == session_id))
         session = result.scalar_one_or_none()
         if not session:
             from app.utils.error_handlers import DatasetNotFoundError
             raise DatasetNotFoundError(f"Session {session_id} not found")
+        if user_id is not None and session.user_id != user_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
         return session
 
     async def list_sessions(

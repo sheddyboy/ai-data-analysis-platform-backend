@@ -6,6 +6,8 @@ from typing import List
 from uuid import UUID
 
 from app.database import get_db
+from app.models.user import User
+from app.services.auth_service import get_current_user
 from app.services.dataset_service import DatasetService
 from app.schemas.dataset import (
     DatasetUploadResponse,
@@ -27,17 +29,18 @@ router = APIRouter()
 )
 async def upload_dataset(
     file: UploadFile = File(..., description="CSV or Excel file"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Upload a new dataset for analysis.
-    
+
     - **file**: CSV or Excel file (max 100MB)
-    
+
     Returns the dataset ID and metadata.
     """
     service = DatasetService(db)
-    dataset = await service.upload_dataset(file)
+    dataset = await service.upload_dataset(file, user_id=current_user.id)
     
     # Build response
     metadata = DatasetMetadata(
@@ -66,17 +69,18 @@ async def upload_dataset(
 )
 async def get_dataset_metadata(
     dataset_id: UUID,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Get detailed metadata for a dataset.
-    
+
     - **dataset_id**: UUID of the dataset
-    
+
     Returns comprehensive dataset information including statistics and sample data.
     """
     service = DatasetService(db)
-    dataset = await service.get_dataset_metadata(dataset_id)
+    dataset = await service.get_dataset(dataset_id, user_id=current_user.id)
     
     metadata = DatasetMetadata(
         rows=dataset.row_count,
@@ -108,18 +112,19 @@ async def get_dataset_metadata(
 async def list_datasets(
     skip: int = 0,
     limit: int = 100,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    List all uploaded datasets with pagination.
-    
+    List the authenticated user's datasets with pagination.
+
     - **skip**: Number of records to skip (default: 0)
     - **limit**: Maximum number of records to return (default: 100)
-    
+
     Returns a list of datasets with basic information.
     """
     service = DatasetService(db)
-    datasets, total = await service.list_datasets(skip=skip, limit=limit)
+    datasets, total = await service.list_datasets(skip=skip, limit=limit, user_id=current_user.id)
     
     items = [
         DatasetListItem(
@@ -148,16 +153,19 @@ async def list_datasets(
 )
 async def delete_dataset(
     dataset_id: UUID,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Delete a dataset and all associated data.
-    
+
     - **dataset_id**: UUID of the dataset to delete
-    
+
     This will permanently delete the dataset file and all associated queries.
     """
     service = DatasetService(db)
+    # Ownership check inside get_dataset
+    await service.get_dataset(dataset_id, user_id=current_user.id)
     await service.delete_dataset(dataset_id)
     
     return None
