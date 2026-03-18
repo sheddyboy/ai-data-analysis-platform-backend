@@ -1,0 +1,32 @@
+[build]
+builder = "dockerfile"
+
+[deploy]
+startCommand = "bash scripts/start.sh"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[deploy.variables]
+DEBUG = "False"
+LOG_LEVEL = "INFO"
+UPLOAD_DIR = "/tmp/uploads"
+DATA_DIR = "/tmp/data"
+ENABLE_CACHE = "True"
+CACHE_TTL = "3600"
+LLM_TEMPERATURE = "0.0"
+LLM_MAX_TOKENS = "2000"
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_MINUTES = "10080"
+RATE_LIMIT_QUERIES_PER_MINUTE = "20"
+FREE_TIER_MONTHLY_TOKEN_LIMIT = "500000"
+PLANNER_MODEL = "gpt-4.1-mini"
+EXECUTOR_MODEL = "gpt-4.1-mini"
+SYNTHESIZER_MODEL = "gpt-4.1-mini"
+AGENT_MAX_ITERATIONS_SIMPLE = "15"
+AGENT_MAX_ITERATIONS_MODERATE = "20"
+AGENT_MAX_ITERATIONS_COMPLEX = "25"
+STREAMING_ENABLED = "True"
+SANDBOX_TIMEOUT = "30"
+SANDBOX_MAX_OUTPUT = "3000"
