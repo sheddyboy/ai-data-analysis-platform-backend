@@ -1,11 +1,10 @@
 """File handling utilities."""
 
-import os
 import uuid
-import aiofiles
 from pathlib import Path
 from fastapi import UploadFile
 from typing import Tuple
+
 from app.config import settings
 from app.utils.error_handlers import FileProcessingError
 
@@ -14,46 +13,26 @@ ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
 
 
 def get_file_extension(filename: str) -> str:
-    """
-    Extract file extension from filename.
-    
-    Args:
-        filename: Original filename
-        
-    Returns:
-        File extension (lowercase, with dot)
-    """
+    """Extract file extension from filename."""
     return Path(filename).suffix.lower()
 
 
 def validate_file_type(filename: str) -> bool:
-    """
-    Validate if file type is supported.
-    
-    Args:
-        filename: Original filename
-        
-    Returns:
-        True if file type is supported, False otherwise
-    """
-    extension = get_file_extension(filename)
-    return extension in ALLOWED_EXTENSIONS
+    """Validate if file type is supported."""
+    return get_file_extension(filename) in ALLOWED_EXTENSIONS
 
 
 async def save_upload_file(upload_file: UploadFile) -> Tuple[str, str, int]:
     """
-    Save uploaded file to disk.
-    
-    Args:
-        upload_file: FastAPI UploadFile object
-        
+    Upload file to Cloudflare R2.
+
     Returns:
-        Tuple of (file_path, unique_filename, file_size)
-        
+        Tuple of (r2_key, unique_filename, file_size)
+        r2_key is stored in Dataset.file_path, e.g. "datasets/uuid.csv"
+
     Raises:
-        FileProcessingError: If file processing fails
+        FileProcessingError: If validation or upload fails
     """
-    # Validate file type
     if not upload_file.filename:
         raise FileProcessingError("No filename provided.")
     if not validate_file_type(upload_file.filename):
@@ -61,52 +40,49 @@ async def save_upload_file(upload_file: UploadFile) -> Tuple[str, str, int]:
             f"Unsupported file type. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}"
         )
 
-    # Create upload directory if it doesn't exist
-    upload_dir = Path(settings.UPLOAD_DIR)
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
-    # Generate unique filename
     extension = get_file_extension(upload_file.filename)
     unique_filename = f"{uuid.uuid4()}{extension}"
-    file_path = upload_dir / unique_filename
-    
+    r2_key = f"datasets/{unique_filename}"
+
     try:
-        # Read file content
         content = await upload_file.read()
         file_size = len(content)
-        
-        # Check file size
+
         if file_size > settings.MAX_UPLOAD_SIZE:
             raise FileProcessingError(
-                f"File size exceeds maximum allowed size of {settings.MAX_UPLOAD_SIZE / (1024*1024):.0f}MB"
+                f"File size exceeds maximum allowed size of "
+                f"{settings.MAX_UPLOAD_SIZE / (1024 * 1024):.0f}MB"
             )
-        
-        # Save file
-        async with aiofiles.open(file_path, 'wb') as f:
-            await f.write(content)
-        
-        return str(file_path), unique_filename, file_size
-        
+
+        from app.services.storage_service import storage_service
+        storage_service.upload(r2_key, content)
+
+        return r2_key, unique_filename, file_size
+
+    except FileProcessingError:
+        raise
     except Exception as e:
-        # Clean up partial file if it exists
-        if file_path.exists():
-            file_path.unlink()
-        raise FileProcessingError(f"Failed to save file: {str(e)}")
+        raise FileProcessingError(f"Failed to upload file: {str(e)}")
     finally:
         await upload_file.close()
 
 
-def delete_file(file_path: str) -> None:
+def delete_file(file_path_or_key: str) -> None:
     """
-    Delete a file from disk.
-    
+    Delete a file from R2 (or local disk for legacy absolute paths).
+
     Args:
-        file_path: Path to file to delete
+        file_path_or_key: R2 object key (e.g. "datasets/uuid.csv") or
+                          legacy absolute path starting with "/"
     """
     try:
-        path = Path(file_path)
-        if path.exists():
-            path.unlink()
+        if file_path_or_key.startswith("/"):
+            # Legacy local path — remove from disk if it still exists
+            path = Path(file_path_or_key)
+            if path.exists():
+                path.unlink()
+        else:
+            from app.services.storage_service import storage_service
+            storage_service.delete(file_path_or_key)
     except Exception:
-        # Silently fail - file deletion is not critical
-        pass
+        pass  # Deletion failure is not critical

@@ -85,6 +85,12 @@ class Settings(BaseSettings):
         int, Field(gt=0, description="Max chars of sandbox output returned to agent")
     ] = 3000
 
+    # Cloudflare R2 storage
+    R2_ACCOUNT_ID: Annotated[str, Field(description="Cloudflare account ID")] = ""
+    R2_ACCESS_KEY_ID: Annotated[str, Field(description="R2 API token access key ID")] = ""
+    R2_SECRET_ACCESS_KEY: Annotated[str, Field(description="R2 API token secret")] = ""
+    R2_BUCKET_NAME: Annotated[str, Field(description="R2 bucket name")] = "datasets"
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", case_sensitive=True
     )
