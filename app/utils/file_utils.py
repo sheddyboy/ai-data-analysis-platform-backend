@@ -24,11 +24,12 @@ def validate_file_type(filename: str) -> bool:
 
 async def save_upload_file(upload_file: UploadFile) -> Tuple[str, str, int]:
     """
-    Upload file to Cloudflare R2.
+    Save an uploaded file to local disk (DEBUG=True) or Cloudflare R2.
 
     Returns:
-        Tuple of (r2_key, unique_filename, file_size)
-        r2_key is stored in Dataset.file_path, e.g. "datasets/uuid.csv"
+        Tuple of (file_path_or_r2_key, unique_filename, file_size)
+        In debug mode: absolute local path (e.g. "/app/uploads/uuid.csv")
+        In production: R2 object key (e.g. "datasets/uuid.csv")
 
     Raises:
         FileProcessingError: If validation or upload fails
@@ -42,7 +43,6 @@ async def save_upload_file(upload_file: UploadFile) -> Tuple[str, str, int]:
 
     extension = get_file_extension(upload_file.filename)
     unique_filename = f"{uuid.uuid4()}{extension}"
-    r2_key = f"datasets/{unique_filename}"
 
     try:
         content = await upload_file.read()
@@ -54,10 +54,17 @@ async def save_upload_file(upload_file: UploadFile) -> Tuple[str, str, int]:
                 f"{settings.MAX_UPLOAD_SIZE / (1024 * 1024):.0f}MB"
             )
 
-        from app.services.storage_service import storage_service
-        storage_service.upload(r2_key, content)
-
-        return r2_key, unique_filename, file_size
+        if settings.USE_LOCAL_STORAGE:
+            upload_dir = Path(settings.UPLOAD_DIR)
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            local_path = upload_dir / unique_filename
+            local_path.write_bytes(content)
+            return str(local_path.resolve()), unique_filename, file_size
+        else:
+            r2_key = f"datasets/{unique_filename}"
+            from app.services.storage_service import storage_service
+            storage_service.upload(r2_key, content)
+            return r2_key, unique_filename, file_size
 
     except FileProcessingError:
         raise

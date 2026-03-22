@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     APP_VERSION: Annotated[str, Field()] = "4.0.0"
     DEBUG: Annotated[bool, Field()] = True
     LOG_LEVEL: Annotated[str, Field(description="Logging level")] = "INFO"
+    USE_LOCAL_STORAGE: Annotated[bool, Field(description="Use local upload folder instead of R2")] = False
     UPLOAD_DIR: Annotated[str, Field()] = "./uploads"
     DATA_DIR: Annotated[str, Field()] = "./data"
     MAX_UPLOAD_SIZE: Annotated[
