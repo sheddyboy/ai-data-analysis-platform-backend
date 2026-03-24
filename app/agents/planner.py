@@ -100,7 +100,7 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
     )
 
     prompt = _build_planner_prompt(state)
-    logger.info("Sending request to planner:\n{}", prompt)
+    logger.debug("Sending request to planner:\n{}", prompt)
     messages = [
         SystemMessage(content=_PLANNER_SYSTEM),
         HumanMessage(content=prompt),
@@ -109,11 +109,11 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
     raw_result = await llm.with_structured_output(
         AnalysisPlan, include_raw=True
     ).ainvoke(messages)
-    logger.info("Raw planner output: {}", raw_result.get("raw"))
+    logger.debug("Raw planner output: {}", raw_result.get("raw"))
     plan = cast(AnalysisPlan, raw_result["parsed"])
     usage = _extract_usage(raw_result.get("raw"))
-    logger.info("Generated analysis plan: {}", plan.steps)
-    logger.info("Token usage for planning step: {}", usage)
+    logger.debug("Generated analysis plan: {}", plan.steps)
+    logger.debug("Token usage for planning step: {}", usage)
 
     prior = state.get("token_usage") or {}
     return {

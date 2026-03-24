@@ -99,12 +99,12 @@ def build_execute_python_tool(context: AnalysisContext):
         """
         clean_code = _strip_code_fences(code)
         preview = clean_code[:120].replace("\n", " ")
-        logger.info("[tool:execute_python] running: {}{}", preview, "..." if len(clean_code) > 120 else "")
+        logger.debug("[tool:execute_python] running: {}{}", preview, "..." if len(clean_code) > 120 else "")
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(_run_code, clean_code)
             try:
                 result = future.result(timeout=settings.SANDBOX_TIMEOUT)
-                logger.info("[tool:execute_python] output: {}", result[:200].replace("\n", " "))
+                logger.debug("[tool:execute_python] output: {}", result[:200].replace("\n", " "))
                 return result
             except concurrent.futures.TimeoutError:
                 future.cancel()

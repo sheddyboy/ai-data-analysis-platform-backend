@@ -75,7 +75,7 @@ class RelevanceGuard:
                 ),
             )
 
-            logger.info("Relevance validation result: {}", result)
+            logger.debug("Relevance validation result: {}", result)
 
             if not result.is_relevant:
                 raise IrrelevantQuestionError(

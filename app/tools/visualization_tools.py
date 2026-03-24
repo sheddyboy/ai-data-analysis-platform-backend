@@ -29,9 +29,9 @@ def build_create_visualization_tool(context: AnalysisContext):
         Supported chart types: bar, line, scatter, pie, histogram.
         """
         try:
-            logger.info("[tool:create_visualization] type={} x={} y={} title={}", chart_type, x, y, title)
+            logger.debug("[tool:create_visualization] type={} x={} y={} title={}", chart_type, x, y, title)
             df = context.get_working_dataframe()
-            logger.info("[tool:create_visualization] working df shape: {}", df.shape)
+            logger.debug("[tool:create_visualization] working df shape: {}", df.shape)
 
             if chart_type == "bar":
                 fig = px.bar(df, x=x, y=y, title=title, color=color)
@@ -54,7 +54,7 @@ def build_create_visualization_tool(context: AnalysisContext):
                 "layout": fig_json["layout"],
             }
             context.add_visualization(viz_data)
-            logger.info("[tool:create_visualization] success — stored viz #{}", len(context.get_visualizations()))
+            logger.debug("[tool:create_visualization] success — stored viz #{}", len(context.get_visualizations()))
             return f"Created {chart_type} chart: '{title}'"
 
         except Exception as e:

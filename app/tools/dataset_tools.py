@@ -15,7 +15,7 @@ def build_load_dataset_tool(context: AnalysisContext):
         Returns column names, types, row count, and the first 3 rows.
         """
         try:
-            logger.info("[tool:load_dataset] loading dataset")
+            logger.debug("[tool:load_dataset] loading dataset")
             df = context.get_dataframe()
             metadata = context.metadata
 
@@ -34,7 +34,7 @@ def build_load_dataset_tool(context: AnalysisContext):
             if metadata.get("summary_statistics"):
                 description += "\nNumeric column statistics available (call execute_python for details).\n"
 
-            logger.info("[tool:load_dataset] done — {} rows, {} cols", len(df), len(df.columns))
+            logger.debug("[tool:load_dataset] done — {} rows, {} cols", len(df), len(df.columns))
             return description
 
         except Exception as e:

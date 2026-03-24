@@ -59,7 +59,7 @@ async def synthesizer_node(state: AgentState) -> dict[str, Any]:
     )
     result = cast(AnalysisResult, raw_result["parsed"])
     usage = _extract_usage(raw_result.get("raw"))
-    logger.info("Generated analysis result: {}", result.answer)
+    logger.debug("Generated analysis result: {}", result.answer)
 
     prior = state.get("token_usage") or {}
     return {
@@ -113,13 +113,13 @@ async def follow_up_node(state: AgentState) -> dict[str, Any]:
     ).ainvoke([SystemMessage(content=_FOLLOWUP_SYSTEM), HumanMessage(content=prompt)])
     result = cast(FollowUpQuestions, raw_result["parsed"])
     usage = _extract_usage(raw_result.get("raw"))
-    logger.info("Generated follow-up questions: {}", result.questions)
+    logger.debug("Generated follow-up questions: {}", result.questions)
 
     follow_ups = [q.model_dump() for q in result.questions]
     prior = state.get("token_usage") or {}
 
-    logger.info("Token usage after follow-up generation: {}", state.get("token_usage"))
-    logger.info(
+    logger.debug("Token usage after follow-up generation: {}", state.get("token_usage"))
+    logger.debug(
         "Merged token usage with follow-up step: {}", _merge_usage(prior, usage)
     )
 

@@ -161,7 +161,7 @@ class QueryService:
                     initial_state, config={"recursion_limit": recursion_limit}
                 ),
             )
-            logger.info("Final agent state: {}", final_state.get("answer"))
+            logger.debug("Final agent state: {}", final_state.get("answer"))
 
             # final_state = cast(AgentState, await graph.ainvoke(initial_state))
         except Exception as e:
@@ -178,7 +178,7 @@ class QueryService:
         execution_time = time.time() - start_time
 
         # Build token usage with cost estimate (gpt-4.1-mini pricing)
-        logger.info(
+        logger.debug(
             "[token_usage] final_state value: {}", final_state.get("token_usage")
         )
         raw_usage = final_state.get("token_usage") or {}

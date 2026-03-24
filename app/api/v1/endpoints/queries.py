@@ -304,7 +304,7 @@ async def query_dataset_stream(
             # Persist result
             execution_time = time.time() - start_time
             raw_usage = final_state.get("token_usage") or {}
-            logger.info("Final token usage: {}", raw_usage)
+            logger.debug("Final token usage: {}", raw_usage)
             if raw_usage:
                 prompt_tokens = raw_usage.get("prompt", 0)
                 completion_tokens = raw_usage.get("completion", 0)

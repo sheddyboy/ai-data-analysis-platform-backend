@@ -226,7 +226,7 @@ async def session_query(
 
     # Build multi-turn context for the planner
     conversation_history = SessionService.build_conversation_context(prior_queries)
-    logger.info(
+    logger.debug(
         "Built conversation history for planner:\n{}",
         conversation_history or "No prior context",
     )

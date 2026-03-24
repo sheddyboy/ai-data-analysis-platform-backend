@@ -171,7 +171,7 @@ def build_graph(context: AnalysisContext):
                     )
                     if not has_error:
                         step_idx += 1
-                        logger.info(
+                        logger.debug(
                             "[executor turn {}] step succeeded — advancing to step_idx={}",
                             turn,
                             step_idx,
@@ -260,14 +260,14 @@ def build_graph(context: AnalysisContext):
                 HumanMessage(content=state["question"]),
                 injected_msg,
             ]
-            logger.info(
+            logger.debug(
                 "[executor turn {}] initial messages:\n{}",
                 turn,
                 "\n".join(f"{type(m).__name__}: {m.content}" for m in full_messages),
             )
         else:
             full_messages = messages + [injected_msg]
-            logger.info(
+            logger.debug(
                 "[executor turn {}] appended step instruction:\n{}",
                 turn,
                 injected_msg.content,
@@ -276,7 +276,7 @@ def build_graph(context: AnalysisContext):
         # ── Bind tool_choice for this step and invoke ────────────────────────
         # Re-bind on every turn so the forced tool matches the current step.
         bound_llm = base_llm.bind_tools(tools, tool_choice=tool_choice)
-        logger.info(
+        logger.debug(
             "[executor turn {}] calling LLM ({}) forcing tool: {}",
             turn,
             settings.EXECUTOR_MODEL,
@@ -285,7 +285,7 @@ def build_graph(context: AnalysisContext):
         response = cast(AIMessage, await bound_llm.ainvoke(full_messages))
         extracted = _extract_usage(response)
         token_usage = _merge_usage(state.get("token_usage") or {}, extracted)
-        logger.info(
+        logger.debug(
             "[executor turn {}] LLM response\ncontent: {}\ntool_calls: {}",
             turn,
             response.content,
@@ -293,7 +293,7 @@ def build_graph(context: AnalysisContext):
         )
         tool_calls = getattr(response, "tool_calls", None) or []
         tool_names = [tc.get("name") for tc in tool_calls]
-        logger.info(
+        logger.debug(
             "[executor turn {}] LLM chose tools: {}", turn, tool_names or "(none)"
         )
 
@@ -324,7 +324,7 @@ def build_graph(context: AnalysisContext):
         if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
             # finish_analysis signals the agent is done
             if any(tc.get("name") == "finish_analysis" for tc in last.tool_calls):
-                logger.info(
+                logger.debug(
                     "[executor] finish_analysis called — routing to synthesizer"
                 )
                 return "synthesizer"
@@ -336,7 +336,7 @@ def build_graph(context: AnalysisContext):
             )
             if iterations < _get_max_iterations(state):
                 return "tools"
-        logger.info(
+        logger.debug(
             "[executor] no tool calls / max iterations — routing to synthesizer"
         )
         return "synthesizer"
